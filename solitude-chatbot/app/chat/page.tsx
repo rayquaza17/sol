@@ -1,132 +1,36 @@
-'use client';
-
-import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import './chat.css';
-
-interface Message {
-    id: string;
-    text: string;
-    sender: 'user' | 'bot';
-    timestamp: Date;
-}
+import { Sparkles, ArrowLeft } from 'lucide-react';
+import ChatInterface from './ChatInterface';
 
 export default function ChatPage() {
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            id: '1',
-            text: "Welcome to Solitude. This is your safe space. How are you feeling right now?",
-            sender: 'bot',
-            timestamp: new Date()
-        }
-    ]);
-    const [input, setInput] = useState('');
-    const [isTyping, setIsTyping] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, isTyping]);
-
-    const getAIResponse = (userMessage: string): string => {
-        const msg = userMessage.toLowerCase();
-
-        if (msg.includes('suicide') || msg.includes('kill') || msg.includes('die')) {
-            return "I'm really holding space for you right now. Please know you're not alone. If you're in India, please call AASRA at 91-9820466726 (24/7) or iCall at 9152987821. Your life matters deeply.";
-        }
-
-        if (msg.includes('anxious') || msg.includes('panic') || msg.includes('stress')) {
-            return "I hear the weight in your words. Let's take a slow breath together. Would you like to try a quick grounding exercise or just talk?";
-        }
-
-        if (msg.includes('hello') || msg.includes('hi')) {
-            return "Hello friend. I'm here to listen. What's on your heart today?";
-        }
-
-        const simpleResponses = [
-            "I'm listening. Tell me more about that.",
-            "That sounds like a lot to carry. How long have you felt this way?",
-            "Your feelings are valid. What would feel helpful right now?",
-            "I'm here with you. What else is on your mind?"
-        ];
-
-        return simpleResponses[Math.floor(Math.random() * simpleResponses.length)];
-    };
-
-    const handleSend = async (e?: React.FormEvent) => {
-        if (e) e.preventDefault();
-        if (!input.trim()) return;
-
-        const userMsg: Message = {
-            id: Date.now().toString(),
-            text: input,
-            sender: 'user',
-            timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, userMsg]);
-        setInput('');
-        setIsTyping(true);
-
-        // Simulate AI delay
-        setTimeout(() => {
-            const response = getAIResponse(userMsg.text);
-            const botMsg: Message = {
-                id: (Date.now() + 1).toString(),
-                text: response,
-                sender: 'bot',
-                timestamp: new Date()
-            };
-            setMessages(prev => [...prev, botMsg]);
-            setIsTyping(false);
-        }, 1500);
-    };
-
     return (
-        <div className="chat-wrapper">
-            <nav className="chat-nav">
-                <Link href="/" className="brand small">
-                    <span className="sparkle">✦</span>
-                    <span>Solitude</span>
+        <div className="min-h-screen bg-solitude-sand-50 flex flex-col">
+            {/* Minimal Nav */}
+            <nav className="h-20 w-full flex items-center justify-between px-8 z-10">
+                <Link href="/" className="flex items-center gap-3 group">
+                    <div className="p-2 rounded-xl bg-white border border-solitude-sand-100 group-hover:border-solitude-teal-500/20 transition-colors">
+                        <ArrowLeft size={20} className="text-solitude-slate-500 group-hover:text-solitude-teal-500 transition-colors" />
+                    </div>
+                    <span className="text-lg font-heading font-bold text-solitude-slate-900">Back Home</span>
                 </Link>
-                <Link href="/" className="btn btn-secondary btn-sm">Exit Sanctuary</Link>
+
+                <Link href="/" className="flex items-center gap-2">
+                    <Sparkles size={20} className="text-solitude-teal-500" />
+                    <span className="text-xl font-heading font-bold text-solitude-slate-900 tracking-tight">Solitude</span>
+                </Link>
+
+                {/* Empty div for balancing flexbox */}
+                <div className="w-32 hidden md:block" />
             </nav>
 
-            <div className="chat-body">
-                <div className="chat-inner">
-                    {messages.map((msg) => (
-                        <div key={msg.id} className={`msg-bubble ${msg.sender === 'user' ? 'msg-user' : 'msg-bot'}`}>
-                            {msg.text}
-                        </div>
-                    ))}
-                    {isTyping && (
-                        <div className="msg-bubble msg-bot typing">
-                            <span className="dot"></span>
-                            <span className="dot"></span>
-                            <span className="dot"></span>
-                        </div>
-                    )}
-                    <div ref={messagesEndRef} />
-                </div>
-            </div>
+            <main className="flex-grow flex items-center justify-center p-4 md:p-8">
+                <ChatInterface />
+            </main>
 
-            <div className="chat-input-zone">
-                <form onSubmit={handleSend} className="input-box">
-                    <input
-                        type="text"
-                        className="chat-field"
-                        placeholder="Share your thoughts..."
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                    />
-                    <button type="submit" className="send-btn" disabled={!input.trim()}>
-                        ➔
-                    </button>
-                </form>
+            {/* Subtle Background Elements */}
+            <div className="fixed inset-0 pointer-events-none -z-10">
+                <div className="absolute top-1/4 left-10 w-96 h-96 bg-solitude-teal-50/50 rounded-full blur-[100px]" />
+                <div className="absolute bottom-1/4 right-10 w-80 h-80 bg-solitude-accent/20 rounded-full blur-[80px]" />
             </div>
         </div>
     );
