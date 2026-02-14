@@ -4,11 +4,11 @@
   --color-sol-deep: hsl(222, 47%, 4%);
   --color-sol-navy: hsl(217, 33%, 12%);
   --color-sol-purple: hsl(245, 20%, 20%);
-  --color-sol-teal: hsl(172, 66%, 45%);
-  --color-sol-teal-muted: hsl(172, 66%, 15%);
-  --color-sol-accent: hsl(172, 80%, 55%);
-  --color-sol-glass: hsla(222, 47%, 10%, 0.4);
-  --color-sol-glass-border: hsla(0, 0%, 100%, 0.08);
+  --color-sol-teal: hsl(172, 50%, 45%);
+  --color-sol-teal-muted: hsl(172, 40%, 15%);
+  --color-sol-accent: hsl(172, 60%, 50%);
+  --color-sol-glass: hsla(222, 47%, 8%, 0.6);
+  --color-sol-glass-border: hsla(0, 0%, 100%, 0.06);
 
   --font-heading: var(--font-outfit), "Outfit", sans-serif;
   --font-body: var(--font-inter), "Inter", sans-serif;

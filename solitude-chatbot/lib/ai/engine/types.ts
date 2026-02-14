@@ -11,24 +11,46 @@ export type IntentType =
     | 'GROUNDING'
     | 'CRISIS'
     | 'GREETING'
+    | 'SMALL_TALK'
+    | 'FACTUAL'
+    | 'JOKE'
+    | 'UNCLEAR'
     | 'GENERAL';
 
 export type EmotionalIntensity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export type FactType = 'emotion' | 'event' | 'concern';
+
+export interface ConversationFact {
+    type: FactType;
+    value: string;
+    label: string;       // Human-readable description, e.g. "exam stress"
+    turnRecorded: number;
+    intensity: EmotionalIntensity;
+}
+
+export interface TrackedQuestion {
+    original: string;     // The original question text
+    normalized: string;   // Lowercased, stripped version for deduplication
+    turnAsked: number;
+    answered: boolean;
+    answer?: string;
+}
 
 export interface ConversationMemory {
     shortTerm: {
         user: string[];
         assistant: string[];
     };
-    facts: {
-        emotions: string[];
-        events: string[];
-        concerns: string[];
-    };
-    askedQuestions: string[];
-    answers: Record<string, string>;
+    facts: ConversationFact[];
+    askedQuestions: TrackedQuestion[];
+    exploredTopics: string[];          // Topics discussed for >= 2 turns
+    topicTurnCount: Record<string, number>;
     usedPhrases: string[];
+    usedCallbacks: string[];           // Track used callback phrases
+    turnsSinceLastCallback: number;
     turnsSinceLastQuestion: number;
+    totalTurns: number;
 }
 
 export interface ConversationState {

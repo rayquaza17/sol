@@ -27,28 +27,28 @@ const modeConfigs: Record<ConversationMode, ModeConfig> = {
         label: 'Vent',
         description: 'Just listen, no advice',
         icon: '💭',
-        accentColor: 'hsl(245, 60%, 75%)' // Soft Purple
+        accentColor: 'hsl(245, 30%, 70%)' // Muted Lavender
     },
     reflect: {
         id: 'reflect',
         label: 'Reflect',
         description: 'Guided questions',
         icon: '🪞',
-        accentColor: 'hsl(45, 90%, 65%)' // Warm Amber
+        accentColor: 'hsl(40, 40%, 65%)' // Muted Gold
     },
     ground: {
         id: 'ground',
         label: 'Ground',
         description: 'Grounding exercises',
         icon: '🌿',
-        accentColor: 'hsl(172, 60%, 55%)' // Sol Teal
+        accentColor: 'hsl(172, 40%, 50%)' // Muted Sol Teal
     },
     problemSolve: {
         id: 'problemSolve',
         label: 'Problem Solve',
         description: 'Structured help',
         icon: '🎯',
-        accentColor: 'hsl(195, 80%, 60%)' // Bright Cyan
+        accentColor: 'hsl(200, 40%, 60%)' // Muted Steel Blue
     }
 };
 

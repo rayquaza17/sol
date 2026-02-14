@@ -61,8 +61,8 @@ export function updateState(
         }
     });
 
-    // Update Memory
-    const newMemory = MemoryManager.update(prevState, message, lastAssistantMessage);
+    // Update Memory — now with intent for richer topic tracking
+    const newMemory = MemoryManager.update(prevState, message, lastAssistantMessage, intent);
 
     // Check for flow exit
     if (prevState.activeFlowId && (msg === 'exit' || msg === 'stop' || msg === 'end')) {
@@ -87,8 +87,7 @@ export function updateState(
 
     return {
         ...prevState,
-        intensity: newIntensity === 'HIGH' || prevState.intensity === 'HIGH' ? 'HIGH' :
-            newIntensity === 'MEDIUM' || prevState.intensity === 'MEDIUM' ? 'MEDIUM' : 'LOW',
+        intensity: newIntensity,
         messageCount: prevState.messageCount + 1,
         lastQuestion: lastAssistantMessage,
         flowAnswers: newFlowAnswers,

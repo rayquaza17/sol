@@ -26,7 +26,7 @@ export function Hero() {
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                        className="text-7xl md:text-[9rem] font-heading leading-[0.9] md:leading-[0.85] max-w-[12ch] mx-auto tracking-tighter filter drop-shadow-sm font-bold"
+                        className="text-6xl md:text-8xl font-heading leading-tight md:leading-[0.9] max-w-[14ch] mx-auto tracking-tighter filter drop-shadow-sm font-bold"
                     >
                         Find calm in <span className="text-sol-teal serif italic font-normal">solitude</span>.
                     </motion.h1>

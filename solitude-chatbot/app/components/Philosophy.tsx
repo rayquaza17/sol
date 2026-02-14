@@ -39,7 +39,7 @@ export function Philosophy() {
                                 initial={{ opacity: 0, y: 20 }}
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
-                                className="text-5xl md:text-7xl font-bold font-heading leading-tight"
+                                className="text-5xl md:text-6xl font-bold font-heading leading-tight"
                             >
                                 Built on <br />
                                 <span className="serif italic font-normal text-sol-teal">quiet</span> ethics.
@@ -55,7 +55,7 @@ export function Philosophy() {
                                     transition={{ delay: i * 0.1 }}
                                     className="flex gap-6 items-start"
                                 >
-                                    <div className="w-12 h-12 rounded-xl bg-sol-teal/10 flex items-center justify-center flex-shrink-0 border border-sol-teal/20">
+                                    <div className="w-14 h-14 rounded-xl bg-sol-teal/10 flex items-center justify-center flex-shrink-0 border border-sol-teal/20">
                                         {p.icon}
                                     </div>
                                     <div className="space-y-2">

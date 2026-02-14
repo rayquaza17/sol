@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export function Footer() {
     return (
-        <footer className="py-20 px-8 border-t border-white/5 bg-sol-deep relative overflow-hidden">
+        <footer className="py-20 px-6 border-t border-white/5 bg-sol-deep relative overflow-hidden">
             {/* Subtle radial glow */}
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-sol-teal/5 blur-[100px] pointer-events-none" />
 

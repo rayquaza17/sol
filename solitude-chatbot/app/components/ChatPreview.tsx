@@ -12,7 +12,7 @@ export function ChatPreview() {
                         initial={{ opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
-                        className="text-4xl md:text-5xl font-bold"
+                        className="text-5xl md:text-6xl font-bold font-heading"
                     >
                         A gentle conversation
                     </motion.h2>
@@ -36,7 +36,7 @@ export function ChatPreview() {
                     {/* Header */}
                     <div className="p-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-sol-teal/10 flex items-center justify-center border border-sol-teal/20">
+                            <div className="w-14 h-14 rounded-2xl bg-sol-teal/10 flex items-center justify-center border border-sol-teal/20">
                                 <Bot className="w-6 h-6 text-sol-teal" />
                             </div>
                             <div>
