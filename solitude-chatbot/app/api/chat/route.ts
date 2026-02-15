@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { processMessage, detectIntentAdvanced } from '@/lib/ai/engine/processor';
 import { ResponseContext, ConversationState } from '@/lib/ai/engine/types';
 import { createInitialState } from '@/lib/ai/engine/state-manager';
+import { detectCrisis, buildCrisisResponse } from '@/utils/detectCrisis';
 
 const PRESENTATION_MODE = true;
 
@@ -37,15 +38,15 @@ function buildPresentationReply(message: string, intent: string): string {
 
     // --- Greeting ---
     if (intent === "greeting") {
-    const openings = [
-        "Hey 🙂 You don't have to rush — we can just start wherever feels easiest.",
-        "Hi… I'm here with you. What's been lingering in your mind lately?",
-        "Hey there 🌙 Take your time — what feels worth sharing right now?",
-        "Hello 🙂 This space is yours. Where would you like to begin?"
-    ];
+        const openings = [
+            "Hey 🙂 You don't have to rush — we can just start wherever feels easiest.",
+            "Hi… I'm here with you. What's been lingering in your mind lately?",
+            "Hey there 🌙 Take your time — what feels worth sharing right now?",
+            "Hello 🙂 This space is yours. Where would you like to begin?"
+        ];
 
-    return openings[Math.floor(Math.random() * openings.length)];
-}
+        return openings[Math.floor(Math.random() * openings.length)];
+    }
 
     // --- Advice ---
     if (intent === "advice") {
@@ -68,35 +69,45 @@ export async function POST(req: Request) {
         const { messages, mode, mood, sessionId = 'default' } = body;
         const lastMessage = messages[messages.length - 1]?.content || "";
 
+        // --- CRISIS DETECTION LAYER ---
+        if (detectCrisis(lastMessage)) {
+            const crisisReply = buildCrisisResponse();
+            return NextResponse.json({
+                content: crisisReply,
+                reply: crisisReply,
+                isCrisis: true
+            });
+        }
+
         // --- PRESENTATION MODE BYPASS ---
         if (PRESENTATION_MODE) {
             const intentMatch = detectIntentAdvanced(lastMessage);
             let normalizedIntent =
-  (intentMatch?.actionType || "neutral").toLowerCase();
+                (intentMatch?.actionType || "neutral").toLowerCase();
 
-// --- Lightweight Presentation Intent Fix ---
-const lowerMsg = lastMessage.trim().toLowerCase();
+            // --- Lightweight Presentation Intent Fix ---
+            const lowerMsg = lastMessage.trim().toLowerCase();
 
-if (["hi", "hello", "hey", "yo", "sup"].includes(lowerMsg)) {
-    normalizedIntent = "greeting";
-}
+            if (["hi", "hello", "hey", "yo", "sup"].includes(lowerMsg)) {
+                normalizedIntent = "greeting";
+            }
 
-if (lowerMsg.includes("advice") || lowerMsg.includes("suggest")) {
-    normalizedIntent = "advice";
-}
+            if (lowerMsg.includes("advice") || lowerMsg.includes("suggest")) {
+                normalizedIntent = "advice";
+            }
 
-if (lowerMsg.includes("stress") || lowerMsg.includes("tired") || lowerMsg.includes("overwhelmed")) {
-    normalizedIntent = "vent";
-}
+            if (lowerMsg.includes("stress") || lowerMsg.includes("tired") || lowerMsg.includes("overwhelmed")) {
+                normalizedIntent = "vent";
+            }
 
-const simpleReply = buildPresentationReply(lastMessage, normalizedIntent);
+            const simpleReply = buildPresentationReply(lastMessage, normalizedIntent);
             const delay = Math.min(900, Math.max(350, simpleReply.length * 8));
-await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise(resolve => setTimeout(resolve, delay));
 
-return NextResponse.json({
-    content: simpleReply,
-    reply: simpleReply,
-    intent: intentMatch
+            return NextResponse.json({
+                content: simpleReply,
+                reply: simpleReply,
+                intent: intentMatch
             });
         }
 
@@ -129,4 +140,5 @@ return NextResponse.json({
         );
     }
 }
+
 
