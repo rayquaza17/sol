@@ -1,18 +1,18 @@
-import { IntentMatch, IntentType, ResponseContext, EngineResponse, ConversationState } from './types';
+import { IntentMatch, IntentType, ResponseContext, EngineResponse, ConversationState, ActionType } from './types';
 import { updateState, createInitialState } from './state-manager';
 import { getFlow } from './flows';
 import { generateEmpatheticResponse } from './generator';
 import { MemoryManager } from './memory';
 
 const KEYWORD_GROUPS: Record<IntentType, string[]> = {
-    VENT: ['exhausted', 'tired', 'always', 'never', 'cant stand', 'fed up', 'sick of', 'unfair', 'everything', 'stressed', 'stress', 'overwhelmed', 'pressure', 'burnt out', 'too much', 'piling up'],
-    ANXIETY: ['anxious', 'panic', 'heart racing', 'shake', 'worry', 'scared', 'breathless', 'fear', 'nervous', 'exam', 'test', 'deadline', 'dread'],
-    SADNESS: ['sad', 'crying', 'depressed', 'empty', 'heavy', 'hopeless', 'grey', 'numb', 'tearful'],
+    VENT: ['exhausted', 'tired', 'always', 'never', 'cant stand', 'fed up', 'sick of', 'unfair', 'everything', 'stressed', 'stress', 'overwhelmed', 'pressure', 'burnt out', 'too much', 'piling up', 'exams', 'final', 'studying', 'work', 'deadline', 'boss', 'failing', 'everyone'],
+    ANXIETY: ['anxious', 'panic', 'heart racing', 'shake', 'worry', 'scared', 'breathless', 'fear', 'nervous', 'exam', 'test', 'deadline', 'dread', 'focus', 'future'],
+    SADNESS: ['sad', 'crying', 'depressed', 'empty', 'heavy', 'hopeless', 'grey', 'numb', 'tearful', 'breakup', 'lost', 'alone', 'blue'],
     ANGER: ['angry', 'hate', 'furious', 'mad', 'shout', 'stupid', 'screaming', 'rage', 'frustrated'],
-    LONELINESS: ['lonely', 'isolated', 'no one', 'alone', 'ignored', 'forgotten', 'nobody', 'invisible'],
-    CONFUSION: ['dont know', 'confused', 'lost', 'uncertain', 'tangled', 'not sure', 'what if'],
-    REFLECTION: ['realized', 'learning', 'understand', 'thoughts', 'think', 'journaling', 'reflect', 'situation'],
-    GROUNDING: ['ground', 'breathing', 'relax', 'calm down', 'centering', 'help me breathe'],
+    LONELINESS: ['lonely', 'isolated', 'no one', 'alone', 'ignored', 'forgotten', 'nobody', 'invisible', 'missing'],
+    CONFUSION: ['dont know', 'confused', 'lost', 'uncertain', 'tangled', 'not sure', 'what if', 'how can i', 'guide me'],
+    REFLECTION: ['realized', 'learning', 'understand', 'thoughts', 'think', 'journaling', 'reflect', 'situation', 'noticing'],
+    GROUNDING: ['ground', 'breathing', 'relax', 'calm down', 'centering', 'help me breathe', 'space to breathe'],
     CRISIS: ['suicide', 'kill', 'die', 'harm', 'end it', 'want to be gone', 'jump', 'cut ', 'blood', 'pill', 'goodbye', 'wont be here', 'done with life', 'over it', 'better off dead'],
     GREETING: ['hi', 'hello', 'hey', 'greetings', 'morning', 'evening'],
     SMALL_TALK: ['weather', 'robot', 'bot', 'human', 'doing well', 'how are you', 'whats up', 'sup'],
@@ -89,7 +89,20 @@ export function detectIntentAdvanced(message: string): IntentMatch {
         scores.UNCLEAR += 20;
     }
 
-    // 4. Calculate Top Intent
+    // 4. Action Type Detection (Higher Precedence for Specific Actions)
+    let actionType: ActionType = 'CASUAL';
+    if (scores.CRISIS > 15) actionType = 'VENT'; // Treat as intense vent/crisis
+    else if (/(how to|advice|tips|help with|what should i|can you suggest|can i do|how can i|ways to)/i.test(msg)) actionType = 'ADVICE';
+    else if (msg.includes('?') || scores.CONFUSION > 10) actionType = 'QUESTION';
+    else if (scores.GREETING > 0 && msg.length < 15) actionType = 'GREET';
+    else if (scores.VENT > 15 || scores.ANGER > 10 || scores.SADNESS > 10 || msg.length > 50) actionType = 'VENT';
+    else if (scores.FACTUAL > 15) actionType = 'INFO';
+
+    // 5. Subject Extraction (Anchor)
+    // Find the most meaningful keyword to use as an anchor
+    const subject = extractSubject(msg, matchedKeywords);
+
+    // 6. Calculate Top Intent
     let topIntent: IntentType = 'GENERAL';
     let maxScore = 0;
 
@@ -102,8 +115,7 @@ export function detectIntentAdvanced(message: string): IntentMatch {
 
     // Default to GENERAL if nothing matched
     if (maxScore === 0) {
-        // Fallback checks
-        if (msg.includes('?')) topIntent = 'FACTUAL'; // Assume unknown question is factual/general
+        if (msg.includes('?')) topIntent = 'FACTUAL';
         else topIntent = 'GENERAL';
     }
 
@@ -112,9 +124,35 @@ export function detectIntentAdvanced(message: string): IntentMatch {
 
     return {
         type: topIntent,
+        actionType,
         confidence,
-        matchedKeywords: Array.from(new Set(matchedKeywords))
+        matchedKeywords: Array.from(new Set(matchedKeywords)),
+        subject
     };
+}
+
+function extractSubject(message: string, keywords: string[]): string | undefined {
+    // 1. Prefer meaningful keywords from matched list
+    if (keywords.length > 0) {
+        const sorted = [...keywords].sort((a, b) => b.length - a.length);
+        const fillers = ['sad', 'angry', 'lonely', 'anxious', 'stress', 'feel', 'bad', 'hi', 'hey', 'hello', 'how to', 'tips', 'advice'];
+        const betterSubjects = sorted.filter(k => !fillers.includes(k.toLowerCase()));
+        if (betterSubjects.length > 0) return betterSubjects[0];
+    }
+
+    // 2. Heuristic extraction (look for common topic-introducing patterns)
+    const topicRegex = /(?:about|with|on|regarding|concerning|handle|manage|studying|focusing on) ([\w\s]{3,25})(?:[.!?]|$)/i;
+    const match = message.match(topicRegex);
+    if (match && match[1]) {
+        const candidate = match[1].trim();
+        // Remove common interrogatives and filler phrases
+        const cleaned = candidate.replace(/^(my|the|some|any|how to|how can i) /i, '');
+        if (cleaned.toLowerCase() === 'how can i') return undefined;
+        return cleaned;
+    }
+
+    // 3. Last resort: just pick a keyword if it's all we have
+    return keywords.length > 0 ? keywords[0] : undefined;
 }
 
 export async function processMessage(context: ResponseContext): Promise<EngineResponse> {

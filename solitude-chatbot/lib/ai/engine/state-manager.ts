@@ -17,7 +17,26 @@ export function createInitialState(mode: ConversationMode): ConversationState {
         lastResponseIndices: {},
         keyEmotions: [],
         lastIntensity: null,
-        memory: createInitialMemory()
+        lastKeywords: [],
+        memory: createInitialMemory(),
+        humanizationState: {
+            lastSentenceOpeners: [],
+            lastResponseTypes: [],
+            lastResponseDepths: [],
+            userEnergyLevel: 'neutral',
+            shortFormCount: 0,
+            totalResponses: 0,
+            consecutiveShortCount: 0
+        },
+        presentationState: {
+            lastResponses: [],
+            lastPatterns: [],
+            questionCount: 0,
+            enabled: true,  // Enable by default for demos
+            conversationStage: 'opening',  // Start at opening stage
+            stageRepetitionCount: 0,
+            lastUserTopic: ''
+        }
     };
 }
 
@@ -91,8 +110,10 @@ export function updateState(
         messageCount: prevState.messageCount + 1,
         lastQuestion: lastAssistantMessage,
         flowAnswers: newFlowAnswers,
-        lastIntensity: prevState.intensity,
+        lastResponseIndices: prevState.lastResponseIndices,
         keyEmotions: newKeyEmotions.slice(0, 5),
+        lastIntensity: prevState.intensity,
+        lastKeywords: intent.matchedKeywords,
         memory: newMemory
     };
 }

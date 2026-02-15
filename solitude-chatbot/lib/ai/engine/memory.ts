@@ -83,6 +83,9 @@ export function createInitialMemory(): ConversationMemory {
         topicTurnCount: {},
         usedPhrases: [],
         usedCallbacks: [],
+        recentOpeners: [],
+        recentPhrases: [],
+        recentQuestions: [],
         turnsSinceLastCallback: 0,
         turnsSinceLastQuestion: 0,
         totalTurns: 0
@@ -156,6 +159,9 @@ export class MemoryManager {
             topicTurnCount: { ...state.memory.topicTurnCount },
             usedPhrases: [...state.memory.usedPhrases],
             usedCallbacks: [...state.memory.usedCallbacks],
+            recentOpeners: [...state.memory.recentOpeners],
+            recentPhrases: [...state.memory.recentPhrases],
+            recentQuestions: [...state.memory.recentQuestions],
             turnsSinceLastQuestion: state.memory.turnsSinceLastQuestion,
             turnsSinceLastCallback: state.memory.turnsSinceLastCallback + 1,
             totalTurns: state.memory.totalTurns + 1
@@ -167,17 +173,33 @@ export class MemoryManager {
         if (assistantMessage) {
             memory.shortTerm.assistant = [assistantMessage, ...memory.shortTerm.assistant].slice(0, MAX_HISTORY);
 
+            // 1a. Track openers, phrases, and questions for anti-repetition
+            const sentences = assistantMessage.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+            if (sentences.length > 0) {
+                const opener = sentences[0].split(/[,\s]/)[0]; // First word of first sentence
+                memory.recentOpeners = [opener, ...memory.recentOpeners].slice(0, 5);
+
+                // Track full phrases (sentences)
+                for (const s of sentences) {
+                    memory.recentPhrases = [s, ...memory.recentPhrases].slice(0, 10);
+                }
+            }
+
             // Track questions asked by assistant
             if (assistantMessage.includes('?')) {
                 const question = this.extractQuestion(assistantMessage);
-                if (question && !this.isQuestionAlreadyAsked(question, memory)) {
-                    const tracked: TrackedQuestion = {
-                        original: question,
-                        normalized: normalizeQuestion(question),
-                        turnAsked: memory.totalTurns,
-                        answered: false
-                    };
-                    memory.askedQuestions.push(tracked);
+                if (question) {
+                    memory.recentQuestions = [question, ...memory.recentQuestions].slice(0, 3);
+
+                    if (!this.isQuestionAlreadyAsked(question, memory)) {
+                        const tracked: TrackedQuestion = {
+                            original: question,
+                            normalized: normalizeQuestion(question),
+                            turnAsked: memory.totalTurns,
+                            answered: false
+                        };
+                        memory.askedQuestions.push(tracked);
+                    }
                 }
                 memory.turnsSinceLastQuestion = 0;
             } else {

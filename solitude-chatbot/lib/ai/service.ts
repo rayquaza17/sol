@@ -1,10 +1,14 @@
-import { getLocalResponse } from './local-model';
+import { processMessage } from './engine/processor';
+import { ConversationMode, MoodLevel } from './engine/types';
 
-export type ConversationMode = 'vent' | 'reflect' | 'ground' | 'problemSolve';
-export type MoodLevel = 1 | 2 | 3 | 4 | 5 | null;
+export type { ConversationMode, MoodLevel };
 
 export const CRISIS_WORDS = ['suicide', 'kill', 'die', 'harm', 'end it'];
 
+/**
+ * @deprecated Use engine/processor.ts for full stateful conversation.
+ * This remains for simple legacy lookups or quick crisis detection.
+ */
 export function detectCrisis(message: string): string | null {
     const msg = message.toLowerCase();
     if (CRISIS_WORDS.some(word => msg.includes(word))) {
@@ -13,11 +17,20 @@ export function detectCrisis(message: string): string | null {
     return null;
 }
 
-export function getCustomResponse(message: string, mode: ConversationMode, mood: MoodLevel): string {
-    // Immediate Crisis Check
+/**
+ * @deprecated Use processMessage from engine/processor.ts instead.
+ */
+export async function getCustomResponse(message: string, mode: ConversationMode, mood: MoodLevel): Promise<string> {
     const crisis = detectCrisis(message);
     if (crisis) return crisis;
 
-    // Get patterned response
-    return getLocalResponse(message, mode, mood);
+    // Fallback to engine processor with no state
+    // Note: Stateful use via /api/chat is preferred.
+    const result = await processMessage({
+        message,
+        mode,
+        mood,
+        history: []
+    });
+    return result.content;
 }
