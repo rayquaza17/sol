@@ -5,7 +5,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Send, Sparkles, LogOut, Heart, Info } from 'lucide-react';
 import Link from 'next/link';
 
-import { getCustomResponse, ConversationMode, MoodLevel } from '@/lib/ai/service';
+import { ConversationMode, MoodLevel } from '@/lib/ai/engine/types';
 
 interface ModeConfig {
     id: ConversationMode;

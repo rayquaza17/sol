@@ -1,146 +1,146 @@
-export type ConversationMode = 'vent' | 'reflect' | 'ground' | 'problemSolve';
-export type MoodLevel = 1 | 2 | 3 | 4 | 5 | null;
+// ─── Intent Types ─────────────────────────────────────────────────────────────
+//
+// 8 mental-health-specific intents + out_of_scope.
+// The classifier MUST assign out_of_scope for anything outside
+// mental health: technical questions, general knowledge, jokes, math, coding.
+//
 
 export type IntentType =
-    | 'VENT'
-    | 'ANXIETY'
-    | 'SADNESS'
-    | 'ANGER'
-    | 'LONELINESS'
-    | 'CONFUSION'
-    | 'REFLECTION'
-    | 'GROUNDING'
-    | 'CRISIS'
-    | 'GREETING'
-    | 'SMALL_TALK'
-    | 'FACTUAL'
-    | 'JOKE'
-    | 'UNCLEAR'
-    | 'GENERAL';
+    | 'greeting'
+    | 'venting'
+    | 'emotional_reflection'
+    | 'advice_request'
+    | 'reassurance_seeking'
+    | 'grounding_request'
+    | 'progress_update'
+    | 'crisis_signal'
+    | 'out_of_scope';
 
-export type ActionType = 'ADVICE' | 'VENT' | 'GREET' | 'CASUAL' | 'INFO' | 'QUESTION';
+export type ActionType = 'VENT' | 'ADVICE' | 'GREET' | 'REFLECT' | 'GROUND' | 'CRISIS' | 'REDIRECT';
 
 export type EmotionalIntensity = 'LOW' | 'MEDIUM' | 'HIGH';
 
-export type FactType = 'emotion' | 'event' | 'concern';
+export type ConversationMode = 'vent' | 'reflect' | 'ground' | 'problemSolve';
 
-export type ResponseType = 'reflection' | 'short_ack' | 'gentle_suggestion' | 'quiet_presence' | 'light_curiosity';
+export type MoodLevel = 1 | 2 | 3 | 4 | 5 | null;
 
-export type UserEnergyLevel = 'casual' | 'intense' | 'neutral';
+export type ToneTrend = 'STABLE' | 'ESCALATING' | 'DE_ESCALATING';
 
-export type ResponseDepth = 'SHORT_PRESENCE' | 'REFLECTIVE_ENGAGEMENT' | 'SUPPORTIVE_EXPANSION';
-
-export type PresentationPattern = 'REFLECTIVE_PRESENCE' | 'GENTLE_ADVICE' | 'CASUAL_ACKNOWLEDGMENT';
-
-export type ConversationStage = 'opening' | 'exploring' | 'grounding';
-
-export interface HumanizationState {
-    lastSentenceOpeners: string[];      // Last 5 sentence openers
-    lastResponseTypes: ResponseType[];  // Last 3 response types
-    lastResponseDepths: ResponseDepth[]; // Last 3 response depths
-    userEnergyLevel: UserEnergyLevel;   // Detected user energy
-    shortFormCount: number;             // Track short-form responses
-    totalResponses: number;             // Total responses for ratio calculation
-    consecutiveShortCount: number;      // Track consecutive short responses
+/**
+ * Ring-buffer state consumed by RepetitionGuard.
+ * Kept in ConversationMemory so it survives across turns.
+ */
+export interface RepetitionState {
+    /** Last 5 sentence openers (first ≤6 words, normalised lowercase) */
+    recentOpenings: string[];
+    /** Last 5 reflective clause extracts */
+    recentPhrases: string[];
+    /** Last 3 question sentences */
+    recentQuestions: string[];
 }
 
-export interface PresentationState {
-    lastResponses: string[];            // Last 3 full responses for loop detection
-    lastPatterns: PresentationPattern[]; // Last 3 patterns used
-    questionCount: number;              // Track question frequency
-    enabled: boolean;                   // Presentation mode toggle
-    conversationStage: ConversationStage; // Current flow anchor stage
-    stageRepetitionCount: number;       // Track same-stage responses
-    lastUserTopic: string;              // For continuity tracking
+/** Coarse emotional valence: negative / neutral / positive */
+export type EmotionalPolarity = 'negative' | 'neutral' | 'positive';
+
+/** Compound emotional trend stored per session */
+export interface EmotionalTrend {
+    /** Overall directional polarity of the conversation so far */
+    polarity: EmotionalPolarity;
+    /** Numeric intensity score (0 = calm, 10 = most intense) */
+    intensityScore: number;
 }
 
-export interface ConversationFact {
-    type: FactType;
-    value: string;
-    label: string;       // Human-readable description, e.g. "exam stress"
-    turnRecorded: number;
+/** One of the top-3 most active topics in the session */
+export interface ActiveTopic {
+    topic: string;
+    /** Normalised weight: occurrences / total topic occurrences */
+    weight: number;
+    occurrences: number;
+}
+
+// ─── Memory ──────────────────────────────────────────────────────────────────
+export interface ConversationMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: number;
+}
+
+export interface EmotionFact {
+    emotion: IntentType;
+    subject?: string;
+    turn: number;
     intensity: EmotionalIntensity;
 }
 
-export interface TrackedQuestion {
-    original: string;     // The original question text
-    normalized: string;   // Lowercased, stripped version for deduplication
-    turnAsked: number;
-    answered: boolean;
-    answer?: string;
+export interface TopicMemory {
+    topic: string;
+    firstTurn: number;
+    lastTurn: number;
+    occurrences: number;
 }
 
 export interface ConversationMemory {
-    shortTerm: {
-        user: string[];
-        assistant: string[];
-    };
-    facts: ConversationFact[];
-    askedQuestions: TrackedQuestion[];
-    exploredTopics: string[];          // Topics discussed for >= 2 turns
-    topicTurnCount: Record<string, number>;
-    usedPhrases: string[];
-    usedCallbacks: string[];           // Track used callback phrases
-    recentOpeners: string[];           // Tracking Step A / start of sentences
-    recentPhrases: string[];           // Tracking Step B / insights / components
-    recentQuestions: string[];         // Tracking Step C / Questions (deduplicated strings)
-    turnsSinceLastCallback: number;
-    turnsSinceLastQuestion: number;
-    totalTurns: number;
+    /** Rolling buffer: last 10 turns (user + assistant messages) */
+    messages: ConversationMessage[];
+    /** Emotional facts extracted per turn */
+    facts: EmotionFact[];
+    /** Recurring themes detected across turns */
+    topics: TopicMemory[];
+    /** Last 5 intensity readings for trend computation */
+    intensityHistory: EmotionalIntensity[];
+    /** Computed direction of emotional tone */
+    toneTrend: ToneTrend;
+    /** Last 5 assistant responses for anti-repetition */
+    recentResponses: string[];
+    /** Total user turns */
+    turnCount: number;
+    /** IDs of questions already asked in this session (prevents repetition) */
+    askedQuestions: Set<string>;
+    /** Aggregated emotional polarity + intensity score for the session */
+    emotionalTrend: EmotionalTrend;
+    /** Ring-buffer state for RepetitionGuard */
+    repetition: RepetitionState;
 }
 
+// ─── State ───────────────────────────────────────────────────────────────────
 export interface ConversationState {
-    mode: ConversationMode;
-    lastQuestion: string | null;
-    intensity: EmotionalIntensity;
-    startTime: number;
-    messageCount: number;
-    activeFlowId: string | null;
-    currentStepIndex: number;
-    flowAnswers: string[];
-    lastResponseIndices: Record<string, number>;
-    keyEmotions: string[];
-    lastIntensity: EmotionalIntensity | null;
-    lastKeywords: string[];            // Keywords from previous user turn
     memory: ConversationMemory;
-    humanizationState: HumanizationState;
-    presentationState: PresentationState; // NEW: Presentation mode state
+    intensity: EmotionalIntensity;
+    lastIntent: IntentType | null;
 }
 
-export interface FlowStep {
-    question: string;
-    description?: string;
+// ─── Safety ──────────────────────────────────────────────────────────────────
+export type SafetyLevel = 'SAFE' | 'MONITOR' | 'CRISIS';
+
+export interface SafetyAssessment {
+    level: SafetyLevel;
+    triggered: boolean;
+    matchedPhrases: string[];
+    score: number;
 }
 
-export interface GuidedFlow {
-    id: string;
-    name: string;
-    steps: FlowStep[];
-}
-
+// ─── Engine I/O ──────────────────────────────────────────────────────────────
 export interface IntentMatch {
     type: IntentType;
     actionType: ActionType;
+    /** 0–100 */
     confidence: number;
     matchedKeywords: string[];
-    subject?: string;                 // Extracted "anchor" word
+    subject?: string;
 }
 
 export interface ResponseContext {
     message: string;
-    mode: ConversationMode;
-    mood: MoodLevel;
+    mode?: ConversationMode;
+    mood?: MoodLevel;
     history: { role: 'user' | 'assistant'; content: string }[];
-    state?: ConversationState;
+    state: ConversationState;
 }
 
 export interface EngineResponse {
     content: string;
     intent: IntentMatch;
     isCrisis: boolean;
+    safetyLevel: SafetyLevel;
     state: ConversationState;
-    metadata?: Record<string, any>;
 }
-
-export type ResponseGenerator = (context: ResponseContext) => string;
-export type IntentDetector = (message: string, context: ResponseContext) => IntentMatch;
