@@ -4,17 +4,19 @@ import { IntentClassifier } from './intent';
 import { DomainGuard } from './domain';
 import { ResponseGenerator } from './responses';
 import { SafetyMonitor } from './safety-monitor';
+import { RepetitionGuard } from './repetition-guard';
 import { detectIntensity } from './state';
 
 // ─── ConversationEngine ───────────────────────────────────────────────────────
 //
 // Orchestrates the full pipeline per request:
 //
-//   1. SafetyMonitor      — crisis phrase detection (always first)
-//   2. IntentClassifier   — mental-health intent + out_of_scope detection
-//   3. DomainGuard        — confirms scope (redundant check, safety net)
+//   1. IntentClassifier   — mental-health intent + out_of_scope detection
+//   2. DomainGuard        — out_of_scope redirect (soft boundary)
+//   3. SafetyMonitor      — crisis phrase detection (override on high confidence)
 //   4. ResponseGenerator  — adaptive response from intent + memory + tone
-//   5. MemoryManager      — update short-term + topic + tone + anti-rep
+//   5. RepetitionGuard    — structural anti-repetition on final text
+//   6. MemoryManager      — update short-term + topic + tone + anti-rep
 //
 
 export class ConversationEngine {
@@ -29,53 +31,87 @@ export class ConversationEngine {
     static process(context: ResponseContext): EngineResponse {
         const { message, state } = context;
 
-        // ── 1. SafetyMonitor ─────────────────────────────────────────────────
-        const safety = SafetyMonitor.assess(message);
-        if (safety.triggered) {
-            const content = SafetyMonitor.buildResponse();
-            const intent = IntentClassifier.classify(message, state.memory);
-            const intensity = detectIntensity(message);
-            const newMemory = MemoryManager.update(state.memory, message, content, intent, intensity);
-            return {
-                content,
-                intent: { ...intent, type: 'crisis_signal', actionType: 'CRISIS' },
-                isCrisis: true,
-                safetyLevel: 'CRISIS',
-                state: { memory: newMemory, intensity, lastIntent: 'crisis_signal' }
-            };
-        }
-
-        // ── 2. IntentClassifier (context-aware) ──────────────────────────────
+        // ── 1. IntentClassifier (context-aware) ──────────────────────────────
         // Pass memory so the classifier can boost likely follow-up intents
         const intent = IntentClassifier.classify(message, state.memory);
 
-        // ── 3. DomainGuard ───────────────────────────────────────────────────
-        // Must run BEFORE ResponseGenerator.
+        // ── 2. DomainGuard ───────────────────────────────────────────────────
+        // Must run BEFORE SafetyMonitor / ResponseGenerator.
         if (DomainGuard.shouldRedirect(intent)) {
-            const content = DomainGuard.buildRedirectResponse();
             const intensity = detectIntensity(message);
-            const newMemory = MemoryManager.update(state.memory, message, content, intent, intensity);
+            const rawContent = DomainGuard.buildRedirectResponse();
+            const { output, state: newRepetition } = RepetitionGuard.apply(
+                rawContent,
+                state.memory.repetition
+            );
+            const newMemory = MemoryManager.update(
+                state.memory,
+                message,
+                output,
+                intent,
+                intensity,
+                undefined,
+                newRepetition
+            );
             return {
-                content,
+                content: output,
                 intent,
                 isCrisis: false,
-                safetyLevel: safety.level,
+                safetyLevel: 'SAFE',
                 state: { memory: newMemory, intensity, lastIntent: intent.type }
             };
         }
 
-        // ── 4. ResponseGenerator ─────────────────────────────────────────────
+        // ── 3. SafetyMonitor ─────────────────────────────────────────────────
+        const safety = SafetyMonitor.assess(message);
         const intensity = detectIntensity(message);
-        const { content, repetition } = ResponseGenerator.generate(intent, state.memory, message);
+        if (safety.triggered) {
+            const crisisDraft = SafetyMonitor.buildResponse();
+            const { output, state: newRepetition } = RepetitionGuard.apply(
+                crisisDraft,
+                state.memory.repetition
+            );
+            const crisisIntent = { ...intent, type: 'crisis_signal', actionType: 'CRISIS' as const };
+            const newMemory = MemoryManager.update(
+                state.memory,
+                message,
+                output,
+                crisisIntent,
+                intensity,
+                undefined,
+                newRepetition
+            );
+            return {
+                content: output,
+                intent: crisisIntent,
+                isCrisis: true,
+                safetyLevel: safety.level,
+                state: { memory: newMemory, intensity, lastIntent: 'crisis_signal' }
+            };
+        }
 
-        // ── 5. MemoryManager: update ─────────────────────────────────────────
+        // ── 4. ResponseGenerator ─────────────────────────────────────────────
+        const draft = ResponseGenerator.generate(intent, state.memory, message);
+
+        // ── 5. RepetitionGuard ───────────────────────────────────────────────
+        const { output, state: newRepetition } = RepetitionGuard.apply(
+            draft,
+            state.memory.repetition
+        );
+
+        // ── 6. MemoryManager: update ─────────────────────────────────────────
         const newMemory = MemoryManager.update(
-            state.memory, message, content, intent, intensity,
-            undefined, repetition
+            state.memory,
+            message,
+            output,
+            intent,
+            intensity,
+            undefined,
+            newRepetition
         );
 
         return {
-            content,
+            content: output,
             intent,
             isCrisis: false,
             safetyLevel: safety.level,
