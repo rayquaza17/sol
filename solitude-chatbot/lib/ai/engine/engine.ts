@@ -1,4 +1,4 @@
-import { ConversationState, ConversationMode, EngineResponse, ResponseContext } from './types';
+import { ConversationState, ConversationMode, EngineResponse, ResponseContext, IntentMatch } from './types';
 import { MemoryManager } from './memory';
 import { IntentClassifier } from './intent';
 import { DomainGuard } from './domain';
@@ -71,7 +71,7 @@ export class ConversationEngine {
                 crisisDraft,
                 state.memory.repetition
             );
-            const crisisIntent = { ...intent, type: 'crisis_signal', actionType: 'CRISIS' as const };
+            const crisisIntent: IntentMatch = { ...intent, type: 'crisis_signal', actionType: 'CRISIS' };
             const newMemory = MemoryManager.update(
                 state.memory,
                 message,
