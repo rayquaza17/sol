@@ -260,6 +260,8 @@ export class MemoryManager {
             askedQuestions: new Set<string>(),
             emotionalTrend: { polarity: 'neutral', intensityScore: 0 },
             repetition: RepetitionGuard.emptyState(),
+            consecutiveAdviceCount: 0,
+            topicPhraseIndex: 0,
         };
     }
 
@@ -277,7 +279,8 @@ export class MemoryManager {
         intent: IntentMatch,
         intensity: EmotionalIntensity,
         sessionId?: string,
-        repetition?: RepetitionState
+        repetition?: RepetitionState,
+        topicBridgeUsed?: boolean
     ): ConversationMemory {
         const now = Date.now();
         const turn = memory.turnCount;
@@ -327,6 +330,15 @@ export class MemoryManager {
             askedQuestions: memory.askedQuestions,
             turnCount: memory.turnCount + 1,
             repetition: repetition ?? memory.repetition,
+            // Advice regulation: increment on consecutive advice turns, reset otherwise
+            consecutiveAdviceCount: intent.type === 'advice_request'
+                ? (memory.consecutiveAdviceCount ?? 0) + 1
+                : 0,
+            // Topic phrase rotation: increment when a topic bridge phrase was used
+            // (the engine passes topicBridgeUsed=true when the plan had topicBridge=true)
+            topicPhraseIndex: (topicBridgeUsed ?? false)
+                ? (memory.topicPhraseIndex ?? 0) + 1
+                : (memory.topicPhraseIndex ?? 0),
         };
 
         if (sessionId) MemoryManager._save(sessionId, updated);

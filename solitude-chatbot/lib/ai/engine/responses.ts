@@ -2,51 +2,54 @@ import {
     IntentType,
     IntentMatch,
     ConversationMemory,
-    ToneTrend,
+    ResponsePlan,
+    ConversationStage,
 } from './types';
 
 // ─── ResponseGenerator ────────────────────────────────────────────────────────
 //
-// Rule-based mini conversational model for mental health.
+// Converts a ResponsePlan into a concrete response string.
 //
-// Every response is composed in three deterministic steps:
+// Pipeline (per call):
+//   Step 1 — Build Context Anchor    (grounds reply; optionally weaves active topic)
+//   Step 2 — Build Emotional Reflection (tone + emotional context aware)
+//   Step 3 — Build Adaptive Continuation (plan-type + stage + forceGrounding)
+//   Step 4 — Assemble & cap at 3 sentences
 //
-//   Step 1 — Context Anchor
-//     Grounds the reply in the user's latest message and/or an active memory topic.
-//
-//   Step 2 — Emotional Reflection
-//     Reflects the detected emotional state in plain, non-clinical language.
-//
-//   Step 3 — Adaptive Continuation
-//     Intent-specific: reflection + curiosity (venting), structured suggestion
-//     (advice), normalization + grounding (reassurance), short exercise (grounding),
-//     or encouragement + continuity (progress).
-//
-// Hard rules enforced before returning:
-//   - Max 3 sentences total
-//   - Max 1 question per response
-//   - No consecutive questions (enforced by RepetitionGuard + build logic)
-//   - RepetitionGuard is applied by ConversationEngine (separation of concerns)
-//
-// No static template pools. Every sentence is assembled from phrase banks that
-// are selected deterministically from the live context (message length, subject,
-// active topic, tone trend, turn count).
+// Phrase selection is deterministic: seed = f(message.length, turnCount).
+// Same message + same turn → same phrase; different inputs → variation.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Phrase banks ─────────────────────────────────────────────────────────────
-// Each bank is an array of strings. A single item is selected deterministically
-// using a seed derived from the input message (msg.length % bank.length).
-// This means the same message always gives the same phrase — but different
-// messages produce different ones, creating natural variation.
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
-// Step 1 — Context Anchor phrases (opening, acknowledging the message)
+function pick<T>(bank: T[], seed: number): T {
+    return bank[seed % bank.length];
+}
+
+function join(...parts: (string | undefined | null)[]): string {
+    return parts.filter(Boolean).join(' ');
+}
+
+function capSentences(text: string): string {
+    const sentences = text
+        .split(/(?<=[.!?])\s+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    return sentences.slice(0, 3).join(' ');
+}
+
+// ── Phrase banks ──────────────────────────────────────────────────────────────
+// Step 1 — Context Anchor (opening, grounded in the user's message)
+
 const ANCHORS_VENTING: string[] = [
     "That's a lot to carry all at once.",
     "Yeah — that weight you're describing is real.",
     "What you're going through sounds genuinely exhausting.",
     "I hear how heavy this has been for you.",
     "Something about what you're sharing feels particularly difficult right now.",
+    "That sounds like a lot to hold.",
+    "There's a heaviness in what you're describing that I don't want to gloss over.",
 ];
 
 const ANCHORS_REFLECTION: string[] = [
@@ -55,6 +58,7 @@ const ANCHORS_REFLECTION: string[] = [
     "The fact that you're seeing this says something.",
     "There's real awareness in what you're describing.",
     "Sitting with something like this takes courage.",
+    "There's something meaningful in that kind of self-awareness.",
 ];
 
 const ANCHORS_ADVICE: string[] = [
@@ -63,6 +67,7 @@ const ANCHORS_ADVICE: string[] = [
     "It makes sense to want something concrete here.",
     "You're asking the right kind of question.",
     "I hear that you want to actually do something about this.",
+    "There's something grounded in wanting a path forward.",
 ];
 
 const ANCHORS_REASSURANCE: string[] = [
@@ -71,6 +76,7 @@ const ANCHORS_REASSURANCE: string[] = [
     "I hear the worry underneath what you're sharing.",
     "I notice you're looking for some solid ground here.",
     "The fact that you're asking this tells me you're paying attention to yourself.",
+    "That concern is real — and it makes sense that it's weighing on you.",
 ];
 
 const ANCHORS_GROUNDING: string[] = [
@@ -79,6 +85,7 @@ const ANCHORS_GROUNDING: string[] = [
     "Let's slow this moment down — just for a beat.",
     "I'm here with you in this moment.",
     "For right now, nothing else needs solving.",
+    "You're safe right here. Let's just breathe for a moment.",
 ];
 
 const ANCHORS_PROGRESS: string[] = [
@@ -87,6 +94,7 @@ const ANCHORS_PROGRESS: string[] = [
     "That sounds like a genuine step forward.",
     "What you're describing matters more than it might feel like.",
     "It's good to hear something different in what you're sharing.",
+    "That kind of shift doesn't come out of nowhere — it comes from you.",
 ];
 
 const ANCHORS_GREETING: string[] = [
@@ -111,7 +119,23 @@ const ANCHORS_OOT: string[] = [
     "I'm not really built for general questions —",
 ];
 
-// Step 2 — Emotional Reflection (middle sentence, grounded in tone trend)
+// ── Topic Bridge Variants (indexed by plan.topicPhraseIndex % 6) ──────────────
+// Six phrasings to rotate through so the same topic isn't always anchored
+// with the same structure. Index is driven by memory.topicPhraseIndex.
+
+const TOPIC_BRIDGE_VARIANTS: string[] = [
+    "Especially with what's been coming up around %TOPIC% —",
+    "Given the pressure around %TOPIC% —",
+    "With what's been happening around %TOPIC% —",
+    "The weight around %TOPIC% —",
+    "That %TOPIC% layer you've been carrying —",
+    "The ongoing %TOPIC% piece —",
+];
+
+// ── Step 2 — Emotional Reflections ───────────────────────────────────────────
+// Three sets: for escalating/stable/de-escalating tone (existing)
+// Plus two new context-specific sets: persistent negative and improving.
+
 const REFLECTIONS_ESCALATING: string[] = [
     "It sounds like the weight of this is building.",
     "I can feel things intensifying in what you're sharing.",
@@ -136,65 +160,138 @@ const REFLECTIONS_STABLE: string[] = [
     "This isn't just surface stuff — I can tell.",
 ];
 
-// Step 3 — Adaptive Continuation: one phrase per intent, intent-specific purpose
+// Persistent negative: containment-focused
+const REFLECTIONS_PERSISTENT_NEGATIVE: string[] = [
+    "It sounds like you've been carrying this for a while now.",
+    "This seems like it's been weighing on you consistently — not just today.",
+    "The heaviness in what you're sharing isn't new, and that matters.",
+    "I can tell this hasn't just been a rough day — it's been a rough stretch.",
+    "What you're describing sounds ongoing, and that kind of sustained weight is real.",
+];
 
-// venting: gentle curiosity (one inviting, non-interrogative or one soft question)
-const CONTINUATIONS_VENTING_STATEMENT: string[] = [
+// Improving context: encouragement-focused
+const REFLECTIONS_IMPROVING: string[] = [
+    "There's something different in how you're approaching this.",
+    "I notice the weight in your words has shifted a little.",
+    "Something in how you're talking about this feels more steady.",
+    "There's a quiet steadiness starting to come through.",
+    "What you're describing sounds like it's starting to settle, even slightly.",
+];
+
+// ── Step 3 — Adaptive Continuations ──────────────────────────────────────────
+// For key intents, three stage variants: early / middle / later.
+
+// VENTING — statements
+const CONTINUATIONS_VENTING_STATEMENT_EARLY: string[] = [
     "You don't have to figure it out right now — just let it sit here.",
     "There's no need to fix anything in this moment.",
     "You're allowed to just feel this without having to explain it.",
-    "I'm not going anywhere — you can take all the time you need with this.",
+    "I'm not going anywhere — take all the time you need.",
     "It doesn't all have to make sense at once.",
 ];
-const CONTINUATIONS_VENTING_QUESTION: string[] = [
+const CONTINUATIONS_VENTING_STATEMENT_MIDDLE: string[] = [
+    "Even as you've been sitting with all of this, there's no rush to resolve it.",
+    "You've shared a lot — and sometimes the most honest thing is to just keep feeling it.",
+    "Given everything you've been carrying, there's no need to wrap it up neatly.",
+    "You've been with this for a while. It's okay to still not have it sorted.",
+];
+const CONTINUATIONS_VENTING_STATEMENT_LATER: string[] = [
+    "After everything you've walked through in these conversations, you're still here — and that counts.",
+    "You've stayed with this honestly, and that kind of endurance is real.",
+    "There's something to be said for still showing up with it, even when it hasn't resolved.",
+    "You've been doing the hard work of just being with this — that matters.",
+];
+
+// VENTING — questions
+const CONTINUATIONS_VENTING_QUESTION_EARLY: string[] = [
     "Is there one part of this that's feeling heaviest right now?",
     "What part of this has been the hardest to carry?",
     "When did this start feeling like too much?",
     "What does this kind of exhaustion feel like for you, specifically?",
-    "Is there something underneath all of this that hasn't had space yet?",
+];
+const CONTINUATIONS_VENTING_QUESTION_MIDDLE: string[] = [
+    "Given everything you've been describing — what feels most stuck right now?",
+    "Of everything you've shared, what's the part that keeps coming back to you?",
+    "What's been the hardest thing to sit with through all of this?",
+];
+const CONTINUATIONS_VENTING_QUESTION_LATER: string[] = [
+    "After sitting with this across so many conversations — what still doesn't have a name?",
+    "What's the piece of this you haven't quite been able to put into words yet?",
+    "Of everything that's stayed with you — what feels most unfinished?",
 ];
 
-// advice_request: structured, one small step
-const CONTINUATIONS_ADVICE: string[] = [
+// ADVICE — statements
+const CONTINUATIONS_ADVICE_EARLY: string[] = [
     "One place to start: name the single most urgent piece — just one.",
-    "Sometimes the clearest next step is the smallest one that's still within reach.",
-    "It can help to ask: what's the one thing, if I did it, that would make the rest lighter?",
+    "Sometimes the clearest next step is the smallest one still within reach.",
     "Breaking this down into one thing at a time is not giving up — it's strategy.",
     "Before a full plan, what does a first, imperfect step look like?",
 ];
-const CONTINUATIONS_ADVICE_QUESTION: string[] = [
-    "What feels most urgent to you right now?",
-    "What have you already tried, even if it didn't fully work?",
-    "What would 'making progress' look like to you, even just a little?",
-    "Where does this feel most stuck for you?",
+const CONTINUATIONS_ADVICE_MIDDLE: string[] = [
+    "Given what you've already shared, there may already be something you know but haven't tried yet.",
+    "Sometimes the thing that's hardest to name is also the thing most worth starting with.",
+    "You've been thinking through this for a while — what feels like the real blocker?",
+];
+const CONTINUATIONS_ADVICE_LATER: string[] = [
+    "After everything you've worked through on this, the next step might be smaller than it seems.",
+    "You've been looking at this from a lot of angles — what does the simplest version of forward look like?",
+    "This has been a long thread. Sometimes 'good enough' is the best move.",
 ];
 
-// reassurance_seeking: normalization + light grounding
+// ADVICE — questions
+const CONTINUATIONS_ADVICE_QUESTION_EARLY: string[] = [
+    "What feels most urgent to you right now?",
+    "What have you already tried, even if it didn't fully work?",
+    "Where does this feel most stuck for you?",
+];
+const CONTINUATIONS_ADVICE_QUESTION_MIDDLE: string[] = [
+    "Of everything you've described, what feels like it has the most traction?",
+    "What's the one thing, if it shifted, that would make the rest more manageable?",
+];
+const CONTINUATIONS_ADVICE_QUESTION_LATER: string[] = [
+    "After all the angles you've looked at — what's the thing you keep coming back to?",
+    "What would 'good enough' actually look like from where you are now?",
+];
+
+// REASSURANCE (stage-independent — normalization doesn't need stage variety)
 const CONTINUATIONS_REASSURANCE: string[] = [
     "You're not overreacting — this is a real thing to navigate.",
     "There's nothing wrong with you for feeling this way.",
     "What you're describing makes sense given everything you're holding.",
     "You're doing your best in something that's genuinely hard.",
     "Feeling uncertain like this doesn't mean you're broken — it means you're human.",
+    "You don't need to earn the right to feel this way.",
 ];
 
-// grounding_request: short structured exercise
+// GROUNDING exercises (stage-independent)
 const CONTINUATIONS_GROUNDING: string[] = [
     "Take one slow breath all the way down — then let it go, and notice what's still there.",
     "Feel the weight of your feet on the floor. That's solid. That's here. That's real.",
     "Name three things you can see right now — just three, out loud or in your head.",
     "Put one hand on your chest. Feel it rise. Slow it down, just slightly — that's enough.",
     "Focus on just your next breath. One breath. Nothing else needs to happen yet.",
+    "Let your shoulders drop. Notice the chair or surface beneath you. You're held.",
 ];
 
-// progress_update: acknowledgment + continuity
-const CONTINUATIONS_PROGRESS: string[] = [
-    "That kind of shift doesn't happen without real effort — I want you to know that counts.",
+// PROGRESS — statements
+const CONTINUATIONS_PROGRESS_EARLY: string[] = [
+    "That kind of shift doesn't happen without real effort — and that counts.",
     "Progress isn't always loud or obvious, but what you're describing is real.",
     "You showed up for yourself, and that's what this was always about.",
     "It's worth pausing to actually feel that — not rushing past it.",
-    "What you're sharing today is different, and that's meaningful.",
 ];
+const CONTINUATIONS_PROGRESS_MIDDLE: string[] = [
+    "You've been sitting with this for a while, and this shift is part of that work.",
+    "That's not something that just happened — you've been moving toward it.",
+    "The things you've been working through have been adding up to this.",
+];
+const CONTINUATIONS_PROGRESS_LATER: string[] = [
+    "After everything you've carried in these conversations, this kind of shift is earned.",
+    "You've stayed with this honestly across a lot of ground — and it's showing.",
+    "This is what the long work looks like — something that changes slowly, then noticeable.",
+];
+
+// PROGRESS — questions
 const CONTINUATIONS_PROGRESS_QUESTION: string[] = [
     "What do you think made the difference?",
     "How does it feel from the inside, being here today?",
@@ -202,7 +299,7 @@ const CONTINUATIONS_PROGRESS_QUESTION: string[] = [
     "Is there something you want to hold onto from this?",
 ];
 
-// greeting
+// GREETING
 const CONTINUATIONS_GREETING: string[] = [
     "What's been on your mind?",
     "What would you like to talk about?",
@@ -211,14 +308,14 @@ const CONTINUATIONS_GREETING: string[] = [
     "What's going on for you right now?",
 ];
 
-// crisis
+// CRISIS
 const CONTINUATIONS_CRISIS: string[] = [
     "You deserve real, human support — please reach out to AASRA at +91-9820466726, available 24/7.",
     "Please call AASRA now at +91-9820466726 — real support is there for you.",
     "Please don't face this alone — reach out to AASRA at +91-9820466726. You matter.",
 ];
 
-// out of scope
+// OUT OF SCOPE
 const CONTINUATIONS_OOT: string[] = [
     "but I'm here if there's something you're feeling or going through that you'd like to talk about.",
     "but what I can do is listen if something's weighing on you emotionally.",
@@ -226,88 +323,24 @@ const CONTINUATIONS_OOT: string[] = [
     "but my space is about how you're doing — is there something there?",
 ];
 
-// Topic anchor phrases (used in Step 1 when active topic is available)
-const TOPIC_BRIDGES: string[] = [
-    "Especially with what's been coming up around %TOPIC% —",
-    "Given what you've been dealing with around %TOPIC% —",
-    "This adds up with what's been going on with %TOPIC% —",
-    "Layered in with %TOPIC%, that makes a lot of sense —",
+// Force-grounding override (used when plan.forceGrounding = true regardless of intent)
+const CONTINUATIONS_FORCE_GROUNDING: string[] = [
+    "Right now — just one breath. Let everything else pause for just a moment.",
+    "Let's slow this down together. Feel where you're sitting. You're here.",
+    "Before anything else — one slow breath in, and let it go. That's the only thing right now.",
+    "Put one hand on your chest. Feel it rise. Let that be enough for this moment.",
 ];
 
-// Tone-trend bridges (injected at the start of Step 2)
-const ESCALATION_BRIDGES: string[] = [
-    "And it sounds like things are intensifying —",
-    "There's a building feeling to all this —",
-    "It's like the pressure keeps adding up —",
-];
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-/** Deterministic index: consistent per message, varies across messages. */
-function pick<T>(bank: T[], seed: number): T {
-    return bank[seed % bank.length];
-}
-
-/**
- * Extracts the most salient noun/subject from the user message for anchoring.
- * Uses a simple noun-phrase heuristic on matched keywords.
- */
-function extractAnchorSubject(
-    message: string,
-    intent: IntentMatch
-): string | undefined {
-    if (intent.subject) return intent.subject;
-
-    // Try to pull a short meaningful phrase from the message
-    const match = message.match(
-        /(?:about|with|and|from|over|my|this|the)\s+([a-z][a-z ]{2,20})(?:\s|[.,!?]|$)/i
-    );
-    return match?.[1]?.trim().replace(/^(my|the|this|that)\s+/i, '');
-}
-
-/**
- * Checks whether the last assistant message in memory ended with a question.
- * Used to enforce the no-consecutive-questions rule.
- */
-function lastTurnWasQuestion(memory: ConversationMemory): boolean {
-    const msgs = memory.messages;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === 'assistant') {
-            return msgs[i].content.trim().endsWith('?');
-        }
-    }
-    return false;
-}
-
-/** Joins non-empty parts into a single string with a space. */
-function join(...parts: (string | undefined | null)[]): string {
-    return parts.filter(Boolean).join(' ');
-}
-
-/** Trims output to at most 3 sentences. */
-function capSentences(text: string): string {
-    // Split on sentence-ending punctuation followed by whitespace or end-of-string
-    const sentences = text
-        .split(/(?<=[.!?])\s+/)
-        .map(s => s.trim())
-        .filter(Boolean);
-    return sentences.slice(0, 3).join(' ');
-}
-
-// ── Step builders ────────────────────────────────────────────────────────────
+// ── Step builders ─────────────────────────────────────────────────────────────
 
 function buildAnchor(
     intent: IntentMatch,
     memory: ConversationMemory,
-    message: string,
+    plan: ResponsePlan,
     seed: number
 ): string {
-    const activeTopic = memory.topics
-        .filter(t => t.occurrences >= 2)
-        .sort((a, b) => b.occurrences - a.occurrences)[0];
-
     let bank: string[];
-    switch (intent.type) {
+    switch (intent.type as IntentType) {
         case 'venting': bank = ANCHORS_VENTING; break;
         case 'emotional_reflection': bank = ANCHORS_REFLECTION; break;
         case 'advice_request': bank = ANCHORS_ADVICE; break;
@@ -322,22 +355,33 @@ function buildAnchor(
 
     let anchor = pick(bank, seed);
 
-    // Optionally weave in the active topic for non-greeting/crisis/oot intents
-    const topicWorthy = !['greeting', 'crisis_signal', 'out_of_scope', 'grounding_request'].includes(intent.type);
-    if (activeTopic && topicWorthy && memory.turnCount > 1) {
-        const topicPhrase = pick(TOPIC_BRIDGES, seed + 1)
-            .replace('%TOPIC%', activeTopic.topic);
-        anchor = `${anchor} ${topicPhrase}`;
+    // Weave in recurring topic using rotating phrase variants
+    if (plan.topicBridge) {
+        const activeTopic = memory.topics
+            .filter(t => t.occurrences >= 2)
+            .sort((a, b) => b.occurrences - a.occurrences)[0];
+        if (activeTopic) {
+            // Rotate through 6 variants using topicPhraseIndex
+            const bridgePhrase = TOPIC_BRIDGE_VARIANTS[plan.topicPhraseIndex % TOPIC_BRIDGE_VARIANTS.length]
+                .replace('%TOPIC%', activeTopic.topic);
+            anchor = `${anchor} ${bridgePhrase}`;
+        }
     }
 
     return anchor;
 }
 
-function buildReflection(
-    trend: ToneTrend,
-    seed: number
-): string {
-    switch (trend) {
+function buildReflection(plan: ResponsePlan, seed: number): string {
+    // Persistent negative overrides tone-trend bank
+    if (plan.forceGrounding || plan.emotionalContext === 'negative') {
+        // Use the persistent-negative bank when polarity is negative
+        return pick(REFLECTIONS_PERSISTENT_NEGATIVE, seed);
+    }
+    if (plan.emotionalContext === 'positive') {
+        return pick(REFLECTIONS_IMPROVING, seed);
+    }
+    // Neutral — fall back to tone-trend
+    switch (plan.toneHint) {
         case 'ESCALATING': return pick(REFLECTIONS_ESCALATING, seed);
         case 'DE_ESCALATING': return pick(REFLECTIONS_DE_ESCALATING, seed);
         default: return pick(REFLECTIONS_STABLE, seed);
@@ -346,48 +390,69 @@ function buildReflection(
 
 function buildContinuation(
     intent: IntentMatch,
-    memory: ConversationMemory,
-    noQuestion: boolean,
+    plan: ResponsePlan,
     seed: number
 ): string {
-    switch (intent.type) {
-        case 'venting': {
-            // Alternate between statement and question based on turn parity
-            // (never consecutive questions)
-            const useQuestion = !noQuestion && memory.turnCount % 2 === 1;
-            return useQuestion
-                ? pick(CONTINUATIONS_VENTING_QUESTION, seed)
-                : pick(CONTINUATIONS_VENTING_STATEMENT, seed);
+    const { stage, useQuestion, forceGrounding } = plan;
+
+    // Force-grounding override: regardless of intent, use a calming micro-exercise
+    if (forceGrounding) {
+        return pick(CONTINUATIONS_FORCE_GROUNDING, seed);
+    }
+
+    switch (intent.type as IntentType) {
+        case 'venting':
+        case 'emotional_reflection': {
+            if (useQuestion) {
+                const bank = stage === 'later'
+                    ? CONTINUATIONS_VENTING_QUESTION_LATER
+                    : stage === 'middle'
+                        ? CONTINUATIONS_VENTING_QUESTION_MIDDLE
+                        : CONTINUATIONS_VENTING_QUESTION_EARLY;
+                return pick(bank, seed);
+            }
+            const bank = stage === 'later'
+                ? CONTINUATIONS_VENTING_STATEMENT_LATER
+                : stage === 'middle'
+                    ? CONTINUATIONS_VENTING_STATEMENT_MIDDLE
+                    : CONTINUATIONS_VENTING_STATEMENT_EARLY;
+            return pick(bank, seed);
         }
 
-        case 'emotional_reflection':
-            // Reflection: always a grounded statement — no extra question pressure
-            return pick(CONTINUATIONS_PROGRESS, seed); // reuses progress-style sentences
-
         case 'advice_request': {
-            const useQuestion = !noQuestion && memory.turnCount % 2 === 0;
-            return useQuestion
-                ? pick(CONTINUATIONS_ADVICE_QUESTION, seed)
-                : pick(CONTINUATIONS_ADVICE, seed);
+            if (useQuestion) {
+                const bank = stage === 'later'
+                    ? CONTINUATIONS_ADVICE_QUESTION_LATER
+                    : stage === 'middle'
+                        ? CONTINUATIONS_ADVICE_QUESTION_MIDDLE
+                        : CONTINUATIONS_ADVICE_QUESTION_EARLY;
+                return pick(bank, seed);
+            }
+            const bank = stage === 'later'
+                ? CONTINUATIONS_ADVICE_LATER
+                : stage === 'middle'
+                    ? CONTINUATIONS_ADVICE_MIDDLE
+                    : CONTINUATIONS_ADVICE_EARLY;
+            return pick(bank, seed);
         }
 
         case 'reassurance_seeking':
-            // Always statement — normalization does not need a question
             return pick(CONTINUATIONS_REASSURANCE, seed);
 
         case 'grounding_request':
-            // Always an exercise — never a question mid-grounding
             return pick(CONTINUATIONS_GROUNDING, seed);
 
         case 'progress_update': {
-            const useQuestion = !noQuestion && memory.turnCount % 2 === 0;
-            return useQuestion
-                ? pick(CONTINUATIONS_PROGRESS_QUESTION, seed)
-                : pick(CONTINUATIONS_PROGRESS, seed);
+            if (useQuestion) return pick(CONTINUATIONS_PROGRESS_QUESTION, seed);
+            const bank = stage === 'later'
+                ? CONTINUATIONS_PROGRESS_LATER
+                : stage === 'middle'
+                    ? CONTINUATIONS_PROGRESS_MIDDLE
+                    : CONTINUATIONS_PROGRESS_EARLY;
+            return pick(bank, seed);
         }
 
         case 'greeting':
-            // Single statement + a warm question is fine for greetings
             return pick(CONTINUATIONS_GREETING, seed);
 
         case 'crisis_signal':
@@ -397,7 +462,7 @@ function buildContinuation(
             return pick(CONTINUATIONS_OOT, seed);
 
         default:
-            return pick(CONTINUATIONS_VENTING_STATEMENT, seed);
+            return pick(CONTINUATIONS_VENTING_STATEMENT_EARLY, seed);
     }
 }
 
@@ -405,46 +470,38 @@ function buildContinuation(
 
 export class ResponseGenerator {
     /**
-     * Generates a contextually grounded response draft.
+     * Generates a response string from a ResponsePlan.
      *
-     * Pipeline:
-     *   1. Build Context Anchor   (grounds in user's message + active topic)
-     *   2. Build Emotional Reflection (tone-trend aware, non-clinical)
-     *   3. Build Adaptive Continuation (intent-specific rule)
-     *   4. Assemble & cap at 3 sentences
+     * @param intent      Classified intent for this turn
+     * @param memory      Current conversation memory (pre-turn state)
+     * @param userMessage Raw user message (used for deterministic seed)
+     * @param plan        ResponsePlan from ResponsePlanner
+     * @returns           Draft response string (before RepetitionGuard)
      */
     static generate(
         intent: IntentMatch,
         memory: ConversationMemory,
-        userMessage: string = ''
+        userMessage: string,
+        plan: ResponsePlan
     ): string {
-
-        // Deterministic seed from message length + turn count
+        // Deterministic seed: same message + same turn → same phrase
         const seed = (userMessage.length + memory.turnCount * 7) | 0;
 
-        // No-question guard: skip question if last assistant turn already asked one
-        const noQuestion = lastTurnWasQuestion(memory);
-
         // ── Step 1: Context Anchor ────────────────────────────────────────────
-        const anchor = buildAnchor(intent, memory, userMessage, seed);
+        const anchor = buildAnchor(intent, memory, plan, seed);
 
         // ── Step 2: Emotional Reflection ─────────────────────────────────────
-        // Skip for crisis (no time for reflection) and greeting (not applicable)
+        // Skipped for crisis / greeting / grounding / redirect
         const skipReflection = ['crisis_signal', 'greeting', 'grounding_request', 'out_of_scope']
             .includes(intent.type);
-        const reflection = skipReflection
-            ? null
-            : buildReflection(memory.toneTrend, seed + 3);
+        const reflection = skipReflection ? null : buildReflection(plan, seed + 3);
 
         // ── Step 3: Adaptive Continuation ────────────────────────────────────
-        const continuation = buildContinuation(intent, memory, noQuestion, seed + 5);
+        const continuation = buildContinuation(intent, plan, seed + 5);
 
         // ── Assemble ──────────────────────────────────────────────────────────
-        // Greeting: anchor is self-contained, continuation is the question
-        // Crisis: anchor + crisis continuation (no reflection)
-        // Grounding: anchor + grounding exercise (no reflection)
-        // Others: anchor + reflection + continuation
-
+        // Crisis / greeting / grounding / redirect: anchor + continuation only
+        // All others: anchor + reflection + continuation
         let assembled: string;
         if (['greeting', 'crisis_signal', 'grounding_request', 'out_of_scope'].includes(intent.type)) {
             assembled = join(anchor, continuation);
@@ -452,8 +509,6 @@ export class ResponseGenerator {
             assembled = join(anchor, reflection, continuation);
         }
 
-        // Cap at 3 sentences
-        const capped = capSentences(assembled);
-        return capped;
+        return capSentences(assembled);
     }
 }

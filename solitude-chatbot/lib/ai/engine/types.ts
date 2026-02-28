@@ -20,11 +20,67 @@ export type ActionType = 'VENT' | 'ADVICE' | 'GREET' | 'REFLECT' | 'GROUND' | 'C
 
 export type EmotionalIntensity = 'LOW' | 'MEDIUM' | 'HIGH';
 
-export type ConversationMode = 'vent' | 'reflect' | 'ground' | 'problemSolve';
+export type ToneTrend = 'STABLE' | 'ESCALATING' | 'DE_ESCALATING';
+
+/** Coarse emotional valence: negative / neutral / positive */
+export type EmotionalPolarity = 'negative' | 'neutral' | 'positive';
+
+/**
+ * Conversation stage derived from turn count.
+ * Drives phrase bank selection in ResponseGenerator.
+ *   early  — turns 0–4   (exploratory, open)
+ *   middle — turns 5–12  (structured, contextual)
+ *   later  — turns 13+   (consolidating, reinforcing)
+ */
+export type ConversationStage = 'early' | 'middle' | 'later';
+
+// ─── Response Planning ────────────────────────────────────────────────────────
+
+/**
+ * Structural strategy the ResponsePlanner selects for a given turn.
+ * Drives phrase-bank selection and assembly order inside ResponseGenerator.
+ */
+export type ResponsePlanType =
+    | 'anchor_reflection_curiosity'  // venting, emotional_reflection
+    | 'anchor_structured_suggestion' // advice_request
+    | 'normalization_grounding'      // reassurance_seeking
+    | 'grounding_exercise'           // grounding_request
+    | 'encouragement_continuity'     // progress_update
+    | 'warm_greeting'                // greeting
+    | 'crisis_override'              // crisis_signal
+    | 'domain_redirect';             // out_of_scope
+
+/**
+ * Plan produced by ResponsePlanner and consumed by ResponseGenerator.
+ * Encapsulates ALL structural decisions for a single turn.
+ */
+export interface ResponsePlan {
+    /** Which structural strategy to use when assembling the response. */
+    planType: ResponsePlanType;
+    /** Whether to include a question in this response. */
+    useQuestion: boolean;
+    /** Whether to weave the top active memory topic into the anchor sentence. */
+    topicBridge: boolean;
+    /** Tone trend propagated from memory — drives reflection phrase selection. */
+    toneHint: ToneTrend;
+    /** Conversation stage — drives early/middle/later phrase variant selection. */
+    stage: ConversationStage;
+    /** Emotional polarity — selects between negative/neutral/positive reflection banks. */
+    emotionalContext: EmotionalPolarity;
+    /**
+     * True when the trend is persistently negative (last 3 HIGH intensity turns)
+     * AND emotional polarity is negative. Triggers a grounding override in the continuation.
+     */
+    forceGrounding: boolean;
+    /**
+     * Monotonically incrementing index from memory.topicPhraseIndex.
+     * Used to rotate which topic bridge phrasing is selected — avoids repeating
+     * "especially with what's been coming up around X" every turn.
+     */
+    topicPhraseIndex: number;
+}
 
 export type MoodLevel = 1 | 2 | 3 | 4 | 5 | null;
-
-export type ToneTrend = 'STABLE' | 'ESCALATING' | 'DE_ESCALATING';
 
 /**
  * Ring-buffer state consumed by RepetitionGuard.
@@ -37,10 +93,12 @@ export interface RepetitionState {
     recentPhrases: string[];
     /** Last 3 question sentences */
     recentQuestions: string[];
+    /**
+     * First word of each of the last 3 questions asked ('What', 'How', 'Is', etc.).
+     * Used by ResponsePlanner to prevent asking the same question type 3 turns in a row.
+     */
+    recentQuestionTypes: string[];
 }
-
-/** Coarse emotional valence: negative / neutral / positive */
-export type EmotionalPolarity = 'negative' | 'neutral' | 'positive';
 
 /** Compound emotional trend stored per session */
 export interface EmotionalTrend {
@@ -58,7 +116,7 @@ export interface ActiveTopic {
     occurrences: number;
 }
 
-// ─── Memory ──────────────────────────────────────────────────────────────────
+// ─── Memory ───────────────────────────────────────────────────────────────────
 export interface ConversationMessage {
     role: 'user' | 'assistant';
     content: string;
@@ -90,7 +148,7 @@ export interface ConversationMemory {
     intensityHistory: EmotionalIntensity[];
     /** Computed direction of emotional tone */
     toneTrend: ToneTrend;
-    /** Last 5 assistant responses for anti-repetition */
+    /** Last 5 assistant responses for semantic anti-repetition checks */
     recentResponses: string[];
     /** Total user turns */
     turnCount: number;
@@ -100,16 +158,27 @@ export interface ConversationMemory {
     emotionalTrend: EmotionalTrend;
     /** Ring-buffer state for RepetitionGuard */
     repetition: RepetitionState;
+    /**
+     * How many consecutive turns the user has requested advice.
+     * Resets to 0 on any non-advice intent.
+     * Used by ResponsePlanner to shift from suggestion → reflective exploration.
+     */
+    consecutiveAdviceCount: number;
+    /**
+     * Monotonically incrementing counter; incremented each time a topic bridge
+     * is actually woven into a response. Used to rotate bridge phrasing variants.
+     */
+    topicPhraseIndex: number;
 }
 
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 export interface ConversationState {
     memory: ConversationMemory;
     intensity: EmotionalIntensity;
     lastIntent: IntentType | null;
 }
 
-// ─── Safety ──────────────────────────────────────────────────────────────────
+// ─── Safety ───────────────────────────────────────────────────────────────────
 export type SafetyLevel = 'SAFE' | 'MONITOR' | 'CRISIS';
 
 export interface SafetyAssessment {
@@ -119,7 +188,7 @@ export interface SafetyAssessment {
     score: number;
 }
 
-// ─── Engine I/O ──────────────────────────────────────────────────────────────
+// ─── Engine I/O ───────────────────────────────────────────────────────────────
 export interface IntentMatch {
     type: IntentType;
     actionType: ActionType;
@@ -131,7 +200,6 @@ export interface IntentMatch {
 
 export interface ResponseContext {
     message: string;
-    mode?: ConversationMode;
     mood?: MoodLevel;
     history: { role: 'user' | 'assistant'; content: string }[];
     state: ConversationState;

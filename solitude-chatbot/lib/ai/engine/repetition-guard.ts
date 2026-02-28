@@ -4,18 +4,23 @@ import { RepetitionState } from './types';
 //
 // Enforces structural variation before ResponseGenerator emits a response.
 //
-// Strategy (no randomness — deterministic structural rules):
+// Strategy (deterministic — no randomness):
 //   1. Extract opener / reflective phrases / questions from the candidate.
-//   2. Check similarity of each against the ring-buffers in RepetitionState.
-//   3. If any violation fires, apply the matching structural variation rule.
-//   4. Record the final output into the ring-buffers and return.
+//   2. Check similarity of each against ring-buffers in RepetitionState.
+//   3. Also run a full-body semantic check against the last 5 stored responses.
+//   4. If any violation fires, apply the matching structural variation rule.
+//   5. Re-check once; apply a second pass if still violating.
+//   6. Record the final output into all ring-buffers and return.
 //
 // Similarity metric: Jaccard overlap on character-bigrams.
+//
 // Thresholds:
-//   opener    > OPENER_THRESHOLD    (0.60) → openingRepeated
-//   phrase    > PHRASE_THRESHOLD    (0.45) → phraseRepeated
-//   question  > QUESTION_THRESHOLD  (0.70) → questionRepeated
-//   full body > BODY_THRESHOLD      (0.45) → bodyTooSimilar
+//   opener    > 0.60 → openingRepeated
+//   phrase    > 0.45 → phraseRepeated
+//   question  > 0.70 → questionRepeated
+//   full body > 0.45 → bodyTooSimilar (against last 5 full responses)
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -27,25 +32,17 @@ const BODY_THRESHOLD = 0.45;
 const MAX_OPENINGS = 5;
 const MAX_PHRASES = 5;
 const MAX_QUESTIONS = 3;
+const MAX_QUESTION_TYPES = 3;
 
 // ── Reflective clause markers ─────────────────────────────────────────────────
 
 const REFLECTIVE_MARKERS = [
-    "sounds like",
-    "it makes sense",
-    "i hear",
-    "that kind of",
-    "what you're",
-    "you've been",
-    "you're carrying",
-    "you don't have to",
-    "you're holding",
-    "it's okay to",
+    "sounds like", "it makes sense", "i hear", "that kind of",
+    "what you're", "you've been", "you're carrying", "you don't have to",
+    "you're holding", "it's okay to", "something in", "the weight",
 ];
 
-// ── Deterministic phrase substitution table ───────────────────────────────────
-// Each entry: [pattern (lowercase), replacement].
-// Applied left-to-right; first match wins.
+// ── Phrase substitution table (deterministic, left-to-right, first match wins) ─
 
 const PHRASE_SUBS: [RegExp, string][] = [
     [/\bthat sounds like\b/gi, "What you're describing feels like"],
@@ -54,11 +51,13 @@ const PHRASE_SUBS: [RegExp, string][] = [
     [/\byou've been holding\b/gi, "You've been carrying"],
     [/\bthat kind of\b/gi, "This sort of"],
     [/\bwhat you're\b/gi, "The way you're"],
-    [/\byou're carrying\b/gi, "You've been holding"],   // reverse pair
-    [/\bthis sort of\b/gi, "That kind of"],          // reverse pair
+    [/\byou're carrying\b/gi, "You've been holding"],
+    [/\bthis sort of\b/gi, "That kind of"],
     [/\bi'm here with you\b/gi, "I'm not going anywhere"],
     [/\byou don't have to\b/gi, "There's no need to"],
     [/\bit's okay to\b/gi, "It's alright to"],
+    [/\bsomething in\b/gi, "There's something underneath"],
+    [/\bthe weight\b/gi, "That heaviness"],
 ];
 
 // ── Violation flags ───────────────────────────────────────────────────────────
@@ -70,9 +69,8 @@ export interface ViolationSet {
     bodyTooSimilar: boolean;
 }
 
-// ── Similarity ────────────────────────────────────────────────────────────────
+// ── Similarity helpers ────────────────────────────────────────────────────────
 
-/** Build the set of character bigrams from a normalised string. */
 function bigrams(text: string): Set<string> {
     const s = text.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
     const out = new Set<string>();
@@ -80,7 +78,6 @@ function bigrams(text: string): Set<string> {
     return out;
 }
 
-/** Jaccard similarity on character bigrams. Returns 0–1. */
 function similarity(a: string, b: string): number {
     const bg1 = bigrams(a);
     const bg2 = bigrams(b);
@@ -91,14 +88,16 @@ function similarity(a: string, b: string): number {
     return intersection / (bg1.size + bg2.size - intersection);
 }
 
-/** Returns true if `candidate` is above `threshold` similar to any item in `haystack`. */
 function tooSimilarToAny(candidate: string, haystack: string[], threshold: number): boolean {
     return haystack.some(h => similarity(candidate, h) > threshold);
 }
 
 // ── Extractors ────────────────────────────────────────────────────────────────
 
-/** First sentence of the response, trimmed to its first 6 words (lowercase, no punct). */
+function splitSentences(text: string): string[] {
+    return text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+}
+
 function extractOpening(response: string): string {
     const first = splitSentences(response)[0] ?? response;
     return first
@@ -110,24 +109,26 @@ function extractOpening(response: string): string {
         .join(' ');
 }
 
-/** All reflective clause sentences (those containing a REFLECTIVE_MARKER). */
 function extractReflectivePhrases(response: string): string[] {
-    const lower = response.toLowerCase();
     return splitSentences(response).filter(s =>
         REFLECTIVE_MARKERS.some(m => s.toLowerCase().includes(m))
     );
 }
 
-/** All question sentences (ending with '?'). */
 function extractQuestions(response: string): string[] {
     return splitSentences(response).filter(s => s.trim().endsWith('?'));
 }
 
-/** Split text into sentences on '.', '!', '?' — preserving the delimiter. */
-function splitSentences(text: string): string[] {
-    return text
-        .split(/(?<=[.!?])\s+/)
-        .map(s => s.trim())
+/**
+ * Extracts the first word of each question sentence (normalised to title-case)
+ * for question-type tracking. e.g. "What part..." → "What"
+ */
+function extractQuestionTypes(response: string): string[] {
+    return extractQuestions(response)
+        .map(q => {
+            const first = q.trim().split(/\s+/)[0] ?? '';
+            return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+        })
         .filter(Boolean);
 }
 
@@ -136,10 +137,14 @@ function splitSentences(text: string): string[] {
 export class RepetitionGuard {
 
     /**
-     * Check a candidate response against the ring-buffers.
-     * Returns a set of boolean violation flags.
+     * Checks violations against ring-buffers.
+     * Also checks full-body similarity against recent full responses.
      */
-    static check(response: string, state: RepetitionState): ViolationSet {
+    static check(
+        response: string,
+        state: RepetitionState,
+        recentResponses: string[] = []
+    ): ViolationSet {
         const opening = extractOpening(response);
         const phrases = extractReflectivePhrases(response);
         const questions = extractQuestions(response);
@@ -148,78 +153,89 @@ export class RepetitionGuard {
         const phraseRepeated = phrases.some(p => tooSimilarToAny(p, state.recentPhrases, PHRASE_THRESHOLD));
         const questionRepeated = questions.some(q => tooSimilarToAny(q, state.recentQuestions, QUESTION_THRESHOLD));
 
-        // Full-body check against all 5 recent openings as a proxy for whole-response history
-        // (we intentionally don't store full responses here — that's memory.recentResponses)
-        const bodyTooSimilar = openingRepeated && phraseRepeated;
+        // Full-body semantic similarity against the last 5 complete responses
+        const bodyTooSimilar =
+            (openingRepeated && phraseRepeated) ||
+            recentResponses.some(r => similarity(response, r) > BODY_THRESHOLD);
 
         return { openingRepeated, phraseRepeated, questionRepeated, bodyTooSimilar };
     }
 
     /**
-     * Apply deterministic structural variation rules for each active violation.
-     * Never shuffles randomly — uses inversion, clause substitution, and reordering.
+     * Apply structural variation rules — deterministic, no random choices.
+     *
+     * When violations fire, up to four strategies are applied in order:
+     *   1. Phrase substitution (phraseRepeated | bodyTooSimilar)
+     *   2. Opening inversion (openingRepeated | bodyTooSimilar)
+     *   3. Question softening or removal (questionRepeated)
+     *   4. Structural restructure (bodyTooSimilar: sentence order inversion + forward statement)
      */
     static vary(response: string, violations: ViolationSet): string {
         let result = response;
 
-        // ── 1. Phrase substitution (phraseRepeated | bodyTooSimilar) ──────────
+        // ── 1. Phrase substitution ─────────────────────────────────────────────
         if (violations.phraseRepeated || violations.bodyTooSimilar) {
             for (const [pattern, replacement] of PHRASE_SUBS) {
                 result = result.replace(pattern, replacement);
             }
         }
 
-        // ── 2. Opening inversion (openingRepeated | bodyTooSimilar) ──────────
+        // ── 2. Opening inversion ──────────────────────────────────────────────
         if (violations.openingRepeated || violations.bodyTooSimilar) {
             result = RepetitionGuard._invertOpening(result);
         }
 
-        // ── 3. Question removal / softening (questionRepeated) ────────────────
+        // ── 3. Question softening ─────────────────────────────────────────────
         if (violations.questionRepeated) {
             result = RepetitionGuard._softenQuestions(result);
+        }
+
+        // ── 4. Structural restructure (aggressive body similarity) ─────────────
+        if (violations.bodyTooSimilar) {
+            result = RepetitionGuard._restructureBody(result);
         }
 
         return result.trim();
     }
 
     /**
-     * Record the final (post-variation) response into the ring-buffers.
+     * Records the final response into all ring-buffers.
      * Returns a new RepetitionState (immutable update).
      */
     static record(response: string, state: RepetitionState): RepetitionState {
         const opening = extractOpening(response);
         const phrases = extractReflectivePhrases(response);
         const questions = extractQuestions(response);
+        const questionTypes = extractQuestionTypes(response);
 
         const recentOpenings = [...state.recentOpenings, opening].slice(-MAX_OPENINGS);
         const recentPhrases = [...state.recentPhrases, ...phrases].slice(-MAX_PHRASES);
         const recentQuestions = [...state.recentQuestions, ...questions].slice(-MAX_QUESTIONS);
+        const recentQuestionTypes = [
+            ...(state.recentQuestionTypes ?? []),
+            ...questionTypes
+        ].slice(-MAX_QUESTION_TYPES);
 
-        return { recentOpenings, recentPhrases, recentQuestions };
+        return { recentOpenings, recentPhrases, recentQuestions, recentQuestionTypes };
     }
 
     /**
-     * Main entry point used by ResponseGenerator.
-     *
-     * 1. Checks for violations.
-     * 2. If any fire, applies variation. Re-checks once; if still violating
-     *    applies variation a second time (convergence guaranteed because
-     *    phrase-sub table is idempotent after the first pass).
-     * 3. Records the final output into the ring-buffers.
-     *
-     * Returns the guarded output string and the updated RepetitionState.
+     * Main entry point.
+     * 1. Check violations (including full-body against recentResponses).
+     * 2. Vary if any fire; re-check + vary once more if still violating.
+     * 3. Record final output into ring-buffers.
      */
     static apply(
         response: string,
-        state: RepetitionState
+        state: RepetitionState,
+        recentResponses: string[] = []
     ): { output: string; state: RepetitionState } {
-        let violations = RepetitionGuard.check(response, state);
+        let violations = RepetitionGuard.check(response, state, recentResponses);
         let output = response;
 
         if (RepetitionGuard._hasAnyViolation(violations)) {
             output = RepetitionGuard.vary(output, violations);
-            // Re-check once; if still violating, run a second pass
-            violations = RepetitionGuard.check(output, state);
+            violations = RepetitionGuard.check(output, state, recentResponses);
             if (RepetitionGuard._hasAnyViolation(violations)) {
                 output = RepetitionGuard.vary(output, violations);
             }
@@ -228,47 +244,35 @@ export class RepetitionGuard {
         return { output, state: RepetitionGuard.record(output, state) };
     }
 
-    // ── Private structural variation helpers ──────────────────────────────────
+    // ── Private structural helpers ─────────────────────────────────────────────
 
     /**
-     * Inverts the opening of a response:
-     *  • If 2+ sentences: moves the second sentence to the front.
-     *  • If only 1 sentence: prepends a short bridging clause.
+     * Inverts the response opening:
+     * - 2+ sentences: move second sentence to the front.
+     * - Single sentence: prepend a deterministic bridging clause.
      */
     private static _invertOpening(response: string): string {
         const sentences = splitSentences(response);
-
         if (sentences.length >= 2) {
-            // Move second sentence to front, demote first to follow
             const [first, second, ...rest] = sentences;
             return [second, first, ...rest].join(' ');
         }
-
-        // Single sentence: prepend a bridging clause so the opener changes
         const BRIDGES = [
             "I want to sit with that for a moment.",
             "There's something in what you're sharing that I want to acknowledge.",
             "Before anything else —",
         ];
-        // Deterministic bridge: pick by character length mod 3
-        const bridge = BRIDGES[response.length % BRIDGES.length];
-        return `${bridge} ${response}`;
+        return `${BRIDGES[response.length % BRIDGES.length]} ${response}`;
     }
 
     /**
-     * Replaces interrogative questions with non-interrogative invitations.
-     * If no questions found, returns the response unchanged.
+     * Softens interrogative questions into declarative invitations.
      */
     private static _softenQuestions(response: string): string {
-        // Replace trailing '?' questions with declarative forms
         return splitSentences(response)
             .map(sentence => {
                 if (!sentence.trim().endsWith('?')) return sentence;
-
-                // Strip the '?' and append a soft invitation instead
                 const core = sentence.trim().replace(/\?$/, '').trim();
-
-                // Heuristic: if sentence starts with "What" / "How" / "Do" / "Does" / "Is" / "Are"
                 const lower = core.toLowerCase();
                 if (/^(what|how)\b/.test(lower)) {
                     return `I'm curious ${core.charAt(0).toLowerCase() + core.slice(1)}.`;
@@ -276,19 +280,40 @@ export class RepetitionGuard {
                 if (/^(do|does|is|are|have|has)\b/.test(lower)) {
                     return `I wonder ${core.charAt(0).toLowerCase() + core.slice(1)}.`;
                 }
-                // Fallback: drop the question; replace with an open invitation
                 return "I'm here to sit with whatever feels right to share.";
             })
             .join(' ');
+    }
+
+    /**
+     * Structural restructure for body-level similarity:
+     * - Drops the first sentence and appends a forward-looking observation instead.
+     * This changes the opening entirely when phrase subs + inversion aren't enough.
+     */
+    private static _restructureBody(response: string): string {
+        const sentences = splitSentences(response);
+        if (sentences.length < 2) return response;
+
+        // Drop sentence 1, keep the rest, append a forward observation
+        const FORWARD_CLOSERS = [
+            "There's no rush to get anywhere different from here.",
+            "You don't need to have this figured out right now.",
+            "Whatever comes next can wait — this moment is enough.",
+        ];
+        const closer = FORWARD_CLOSERS[response.length % FORWARD_CLOSERS.length];
+        return [...sentences.slice(1), closer].join(' ');
     }
 
     private static _hasAnyViolation(v: ViolationSet): boolean {
         return v.openingRepeated || v.phraseRepeated || v.questionRepeated || v.bodyTooSimilar;
     }
 
-    // ── Empty state factory ───────────────────────────────────────────────────
-
     static emptyState(): RepetitionState {
-        return { recentOpenings: [], recentPhrases: [], recentQuestions: [] };
+        return {
+            recentOpenings: [],
+            recentPhrases: [],
+            recentQuestions: [],
+            recentQuestionTypes: [],
+        };
     }
 }

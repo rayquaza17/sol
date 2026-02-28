@@ -11,7 +11,7 @@ const sessionStore = new Map<string, ConversationState>();
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { messages, mode, mood, sessionId = 'default' } = body;
+        const { messages, mood, sessionId = 'default' } = body;
 
         const lastMessage: string = messages?.[messages.length - 1]?.content || '';
         if (!lastMessage.trim()) {
@@ -22,12 +22,11 @@ export async function POST(req: Request) {
         }
 
         // Retrieve or create session state
-        const currentState = sessionStore.get(sessionId) ?? createInitialState(mode);
+        const currentState = sessionStore.get(sessionId) ?? createInitialState();
 
         // Process the message through the conversation engine
         const result = processMessage({
             message: lastMessage,
-            mode,
             mood,
             history: messages,
             state: currentState

@@ -5,7 +5,11 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Send, Sparkles, LogOut, Heart, Info } from 'lucide-react';
 import Link from 'next/link';
 
-import { ConversationMode, MoodLevel } from '@/lib/ai/engine/types';
+import { MoodLevel } from '@/lib/ai/engine/types';
+
+// Conversation mode is a UI-level concept only.
+// The engine classifies intent from the message itself; mode is decorative.
+type ConversationMode = 'vent' | 'reflect' | 'ground' | 'problemSolve';
 
 interface ModeConfig {
     id: ConversationMode;
