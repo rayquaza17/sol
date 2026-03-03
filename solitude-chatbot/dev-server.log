@@ -1,0 +1,25 @@
+
+> solitude-chatbot@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.4 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.29.24:3000
+
+✓ Starting...
+✓ Ready in 2s
+○ Compiling /chat ...
+ GET /chat 200 in 12.1s (compile: 11.8s, render: 323ms)
+ POST /api/chat 200 in 344ms (compile: 314ms, render: 30ms)
+ POST /api/chat 200 in 18ms (compile: 5ms, render: 12ms)
+ POST /api/chat 200 in 14ms (compile: 4ms, render: 10ms)
+ POST /api/chat 200 in 14ms (compile: 5ms, render: 9ms)
+ POST /api/chat 200 in 13ms (compile: 4ms, render: 10ms)
+ POST /api/chat 200 in 15ms (compile: 3ms, render: 12ms)
+ POST /api/chat 200 in 14ms (compile: 6ms, render: 9ms)
+ POST /api/chat 200 in 13ms (compile: 5ms, render: 8ms)
+ POST /api/chat 200 in 15ms (compile: 5ms, render: 10ms)
+ POST /api/chat 200 in 14ms (compile: 4ms, render: 10ms)
+ POST /api/chat 200 in 9ms (compile: 2ms, render: 7ms)
+
+C:\Users\rejil.AORUS_ELITE\Documents\GitHub\sol\solitude-chatbot>

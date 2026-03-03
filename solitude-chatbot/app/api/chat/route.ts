@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
-import { processMessage, createInitialState } from '@/lib/ai/engine/engine';
+import { ConversationEngine, createInitialState } from '@/lib/ai/engine/engine';
+import { validateOutput } from '@/lib/outputGuard';
 import { ConversationState } from '@/lib/ai/engine/types';
+import { detectIntensity } from '@/lib/ai/engine/state';
+import { StageTracker } from '@/lib/ai/engine/stage-tracker';
+import { constructPrompt } from '@/lib/promptConstructor';
 
 // ─── In-Memory Session Store ──────────────────────────────────────────────────
-// Keyed by sessionId. Clears on server restart.
 const sessionStore = new Map<string, ConversationState>();
 
 // ─── POST /api/chat ───────────────────────────────────────────────────────────
@@ -24,22 +27,94 @@ export async function POST(req: Request) {
         // Retrieve or create session state
         const currentState = sessionStore.get(sessionId) ?? createInitialState();
 
-        // Process the message through the conversation engine
-        const result = processMessage({
-            message: lastMessage,
-            mood,
-            history: messages,
-            state: currentState
+        // ── Step 1: Intent, CrisisMonitor, DomainGuard, MemoryBuilder ─────────
+        const engineResult = ConversationEngine.process(lastMessage, currentState);
+
+        // ── Level 3 Crisis: bypass Ollama entirely ────────────────────────────
+        if (engineResult.crisisLevel === 3 && engineResult.crisisResponse) {
+            const intensity = detectIntensity(lastMessage);
+            const stage = StageTracker.determineStage(currentState.memory);
+            const updatedState = ConversationEngine.updateMemory(
+                currentState,
+                lastMessage,
+                engineResult.crisisResponse,
+                engineResult.intent,
+                intensity,
+                stage,
+            );
+            sessionStore.set(sessionId, updatedState);
+            return NextResponse.json({
+                content: engineResult.crisisResponse,
+                reply: engineResult.crisisResponse,
+                intent: engineResult.intent,
+                isCrisis: true,
+            });
+        }
+
+        // ── Step 2: Build structured prompt ──────────────────────────────────
+        const intensity = detectIntensity(lastMessage);
+        const stage = StageTracker.determineStage(currentState.memory);
+        const constructedPrompt = constructPrompt({
+            userMessage: lastMessage,
+            intent: engineResult.intent,
+            memoryState: currentState.memory,
+            stage,
+            intensity,
+            isCrisis: engineResult.isCrisis,
         });
 
-        // Persist updated state
-        sessionStore.set(sessionId, result.state);
 
+        // ── Step 3: Call Ollama ───────────────────────────────────────────────
+        let generatedText: string;
+        try {
+            const ollamaRes = await fetch('http://localhost:11434/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'llama3',
+                    prompt: constructedPrompt,
+                    stream: false,
+                    options: {
+                        temperature: 0.7,
+                        top_p: 0.9,
+                    },
+                }),
+            });
+
+            if (!ollamaRes.ok) {
+                throw new Error(`Ollama returned status ${ollamaRes.status}`);
+            }
+
+            const data = await ollamaRes.json();
+            generatedText = data.response ?? '';
+        } catch {
+            return NextResponse.json(
+                { content: 'Local language model is not running. Please start Ollama.', isCrisis: false },
+                { status: 200 }
+            );
+        }
+
+        // ── Step 4: Output Guard ──────────────────────────────────────────────
+        const finalContent = validateOutput(generatedText);
+
+        // ── Step 5: Update memory ─────────────────────────────────────────────
+        const updatedState = ConversationEngine.updateMemory(
+            currentState,
+            lastMessage,
+            finalContent,
+            engineResult.intent,
+            intensity,
+            stage,
+        );
+
+        sessionStore.set(sessionId, updatedState);
+
+        // ── Step 6: Return response ───────────────────────────────────────────
         return NextResponse.json({
-            content: result.content,
-            reply: result.content,
-            intent: result.intent,
-            isCrisis: result.isCrisis
+            content: finalContent,
+            reply: finalContent,
+            intent: engineResult.intent,
+            isCrisis: engineResult.isCrisis,
         });
 
     } catch (error) {

@@ -2,59 +2,16 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Send, Sparkles, LogOut, Heart, Info } from 'lucide-react';
+import { Send, Sparkles, LogOut, Heart, Info, Mic, MicOff } from 'lucide-react';
 import Link from 'next/link';
 
 import { MoodLevel } from '@/lib/ai/engine/types';
-
-// Conversation mode is a UI-level concept only.
-// The engine classifies intent from the message itself; mode is decorative.
-type ConversationMode = 'vent' | 'reflect' | 'ground' | 'problemSolve';
-
-interface ModeConfig {
-    id: ConversationMode;
-    label: string;
-    description: string;
-    icon: string;
-    accentColor: string;
-}
 
 interface MoodOption {
     level: 1 | 2 | 3 | 4 | 5;
     emoji: string;
     label: string;
 }
-
-const modeConfigs: Record<ConversationMode, ModeConfig> = {
-    vent: {
-        id: 'vent',
-        label: 'Vent',
-        description: 'Just listen, no advice',
-        icon: '💭',
-        accentColor: 'hsl(245, 30%, 70%)' // Muted Lavender
-    },
-    reflect: {
-        id: 'reflect',
-        label: 'Reflect',
-        description: 'Guided questions',
-        icon: '🪞',
-        accentColor: 'hsl(40, 40%, 65%)' // Muted Gold
-    },
-    ground: {
-        id: 'ground',
-        label: 'Ground',
-        description: 'Grounding exercises',
-        icon: '🌿',
-        accentColor: 'hsl(172, 40%, 50%)' // Muted Sol Teal
-    },
-    problemSolve: {
-        id: 'problemSolve',
-        label: 'Problem Solve',
-        description: 'Structured help',
-        icon: '🎯',
-        accentColor: 'hsl(200, 40%, 60%)' // Muted Steel Blue
-    }
-};
 
 const moodOptions: MoodOption[] = [
     { level: 1, emoji: '😢', label: 'Struggling' },
@@ -80,7 +37,6 @@ interface LocalMessage {
 }
 
 export default function ChatInterface() {
-    const [conversationMode, setConversationMode] = useState<ConversationMode>('vent');
     const [currentMood, setCurrentMood] = useState<MoodLevel>(null);
     const [showMoodCheckIn, setShowMoodCheckIn] = useState(true);
     const [messages, setMessages] = useState<LocalMessage[]>([
@@ -105,6 +61,63 @@ export default function ChatInterface() {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
     const shouldReduceMotion = useReducedMotion();
+
+    // ── Voice Input ──────────────────────────────────────────────────────────
+    const [isListening, setIsListening] = useState(false);
+    const [voiceSupported, setVoiceSupported] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognitionRef = useRef<any>(null);
+
+    useEffect(() => {
+        // Feature detection — browser-only, never runs on SSR
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = window as any;
+        const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+        if (!SR) return;
+
+        setVoiceSupported(true);
+
+        const recognition = new SR();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        recognition.onresult = (event: any) => {
+            const transcript: string = event.results[0][0].transcript;
+            setInput(prev => prev ? `${prev} ${transcript}` : transcript);
+            setIsListening(false);
+        };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        recognition.onerror = (event: any) => {
+            console.warn('[Voice] SpeechRecognition error:', event.error);
+            setIsListening(false);
+        };
+
+        recognition.onend = () => {
+            setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+
+        return () => {
+            recognition.abort();
+        };
+    }, []);
+
+    const toggleVoice = () => {
+        const recognition = recognitionRef.current;
+        if (!recognition) return;
+        if (isListening) {
+            recognition.abort();
+            setIsListening(false);
+        } else {
+            recognition.start();
+            setIsListening(true);
+        }
+    };
+
 
 
 
@@ -180,7 +193,6 @@ export default function ChatInterface() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         messages: [...messages, userMsg],
-                        mode: conversationMode,
                         mood: currentMood
                     })
                 });
@@ -239,33 +251,26 @@ export default function ChatInterface() {
         resetIdleTimer();
     };
 
-    const currentMode = modeConfigs[conversationMode];
-
     return (
         <div className="flex flex-col h-[calc(100dvh-7rem)] max-w-4xl mx-auto w-full bg-sol-glass backdrop-blur-3xl border border-sol-glass-border rounded-[3rem] overflow-hidden shadow-2xl relative z-10">
             {/* Chat Header */}
             <header className="px-10 py-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02] flex-shrink-0">
                 <div className="flex items-center gap-5">
                     <div
-                        className="w-14 h-14 rounded-[1.25rem] flex items-center justify-center shadow-lg transition-all duration-500 border border-white/5"
+                        className="w-14 h-14 rounded-[1.25rem] flex items-center justify-center shadow-lg border border-white/5 bg-sol-teal/10 text-sol-teal"
                         aria-hidden="true"
-                        style={{
-                            backgroundColor: `${currentMode.accentColor}10`,
-                            color: currentMode.accentColor,
-                        }}
                     >
                         <Sparkles size={28} className="animate-pulse" />
                     </div>
                     <div>
                         <h2 className="text-2xl font-heading font-bold text-white tracking-tight">Solitude</h2>
-                        <div className="flex items-center gap-2 text-xs font-semibold tracking-widest uppercase opacity-80" style={{ color: currentMode.accentColor }}>
+                        <div className="flex items-center gap-2 text-xs font-semibold tracking-widest uppercase opacity-70 text-sol-teal">
                             <motion.span
                                 animate={shouldReduceMotion ? { opacity: 0.8 } : { scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
                                 transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                                className="w-2 h-2 rounded-full"
-                                style={{ backgroundColor: currentMode.accentColor }}
+                                className="w-2 h-2 rounded-full bg-sol-teal"
                             />
-                            {currentMode.label} — {currentMode.description}
+                            Your safe space
                         </div>
                     </div>
                 </div>
@@ -287,37 +292,7 @@ export default function ChatInterface() {
                 </div>
             </header>
 
-            {/* Mode Selector */}
-            <div
-                className="px-6 py-4 border-b border-white/10 bg-white/[0.02] flex gap-2 overflow-x-auto scrollbar-none flex-shrink-0"
-                role="tablist"
-                aria-label="Therapeutic conversation modes"
-            >
-                {Object.values(modeConfigs).map((mode) => (
-                    <motion.button
-                        key={mode.id}
-                        role="tab"
-                        aria-selected={conversationMode === mode.id}
-                        aria-label={`Switch to ${mode.label} mode - ${mode.description}`}
-                        onClick={() => setConversationMode(mode.id)}
-                        whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
-                        whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
-                        transition={{ duration: 0.2 }}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-[250ms] whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-sol-navy ${conversationMode === mode.id
-                            ? 'text-sol-deep shadow-lg'
-                            : 'text-slate-200 bg-white/5 hover:bg-white/10 hover:text-white focus-visible:ring-white/20'
-                            }`}
-                        style={{
-                            backgroundColor: conversationMode === mode.id ? mode.accentColor : undefined,
-                            boxShadow: conversationMode === mode.id ? `0 4px 12px ${mode.accentColor}40` : undefined,
-                            outlineColor: conversationMode === mode.id ? mode.accentColor : undefined
-                        }}
-                    >
-                        <span className="text-base" aria-hidden="true">{mode.icon}</span>
-                        <span>{mode.label}</span>
-                    </motion.button>
-                ))}
-            </div>
+
 
             {/* Messages Area */}
             <div
@@ -498,7 +473,7 @@ export default function ChatInterface() {
                         <textarea
                             ref={textareaRef}
                             rows={1}
-                            className="w-full bg-white/[0.03] backdrop-blur-3xl border border-white/10 focus:border-sol-teal/50 focus:ring-8 focus:ring-sol-teal/5 px-8 py-6 pr-20 rounded-[2.5rem] text-white placeholder:text-slate-500 outline-none text-lg leading-relaxed resize-none overflow-hidden transition-all duration-300"
+                            className={`w-full bg-white/[0.03] backdrop-blur-3xl border border-white/10 focus:border-sol-teal/50 focus:ring-8 focus:ring-sol-teal/5 px-8 py-6 rounded-[2.5rem] text-white placeholder:text-slate-500 outline-none text-lg leading-relaxed resize-none overflow-hidden transition-all duration-300 ${voiceSupported ? 'pr-36' : 'pr-20'}`}
                             placeholder="Share your thoughts gently..."
                             value={input}
                             onChange={onInputChange}
@@ -508,6 +483,25 @@ export default function ChatInterface() {
                             style={{ minHeight: '72px', maxHeight: '200px' }}
                         />
                     </motion.div>
+                    {/* Mic button — only rendered when Web Speech API is supported */}
+                    {voiceSupported && (
+                        <motion.button
+                            type="button"
+                            onClick={toggleVoice}
+                            whileHover={shouldReduceMotion ? {} : { scale: 1.05, y: -2 }}
+                            whileTap={shouldReduceMotion ? {} : { scale: 0.95 }}
+                            transition={{ duration: 0.2 }}
+                            className={`absolute right-20 bottom-4 w-14 h-14 rounded-2xl transition-all duration-300 flex items-center justify-center ${isListening
+                                ? 'bg-red-500/90 text-white shadow-xl shadow-red-500/30 ring-4 ring-red-400/40 animate-pulse'
+                                : 'bg-white/[0.06] text-slate-400 hover:bg-white/10 hover:text-sol-teal'
+                                }`}
+                            aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+                            aria-pressed={isListening}
+                        >
+                            {isListening ? <MicOff size={22} aria-hidden="true" /> : <Mic size={22} aria-hidden="true" />}
+                        </motion.button>
+                    )}
+
                     <motion.button
                         type="submit"
                         disabled={!input.trim() || isLoading}
