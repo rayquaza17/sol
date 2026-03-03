@@ -34,6 +34,7 @@ export function Navbar() {
                 <div className="hidden md:flex items-center gap-12 font-medium">
                     <Link href="/about" className="text-slate-400 hover:text-white transition-colors text-sm uppercase tracking-[0.2em] font-semibold">Our Way</Link>
                     <Link href="/resources" className="text-slate-400 hover:text-white transition-colors text-sm uppercase tracking-[0.2em] font-semibold">Library</Link>
+                    <Link href="/auth" className="text-slate-400 hover:text-white transition-colors text-sm uppercase tracking-[0.2em] font-semibold">Sign In</Link>
                     <Link href="/chat" className="btn-sol-primary !py-3 !px-8 !text-sm gap-3 tracking-wide">
                         Enter Sanctuary <Wind size={18} />
                     </Link>
