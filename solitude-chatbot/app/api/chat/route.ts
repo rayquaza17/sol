@@ -51,6 +51,18 @@ export async function POST(req: Request) {
             });
         }
 
+        // ── Out-of-scope: bypass Ollama with deterministic boundary response ──
+        if (engineResult.isOutOfScope && engineResult.outOfScopeResponse) {
+            // Persist lastIntent='out_of_scope' so next turn can detect repeat
+            sessionStore.set(sessionId, engineResult.state);
+            return NextResponse.json({
+                content: engineResult.outOfScopeResponse,
+                reply: engineResult.outOfScopeResponse,
+                intent: engineResult.intent,
+                isCrisis: false,
+            });
+        }
+
         // ── Step 2: Build structured prompt ──────────────────────────────────
         const intensity = detectIntensity(lastMessage);
         const stage = StageTracker.determineStage(currentState.memory);
@@ -95,7 +107,8 @@ export async function POST(req: Request) {
         }
 
         // ── Step 4: Output Guard ──────────────────────────────────────────────
-        const finalContent = validateOutput(generatedText);
+        const lastResponse = currentState.memory.recentResponses.at(-1);
+        const finalContent = validateOutput(generatedText, lastResponse);
 
         // ── Step 5: Update memory ─────────────────────────────────────────────
         const updatedState = ConversationEngine.updateMemory(

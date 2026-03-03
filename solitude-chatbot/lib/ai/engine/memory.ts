@@ -129,7 +129,7 @@ export class MemoryManager {
         }
 
         // 3. Topic memory
-        const newTopics = MemoryManager._updateTopics(memory.topics, intent, turn);
+        const newTopics = MemoryManager._updateTopics(memory.topics, intent, userMessage, turn);
 
         // 4. Intensity + trends
         const newIntensityHistory: EmotionalIntensity[] = [
@@ -184,16 +184,48 @@ export class MemoryManager {
 
     // ── Private Helpers ───────────────────────────────────────────────────────
 
+    // Common stopwords to exclude from raw-text extraction
+    private static readonly STOPWORDS = new Set([
+        'that', 'this', 'with', 'have', 'from', 'they', 'will', 'your',
+        'been', 'what', 'when', 'where', 'just', 'dont', 'feel', 'like',
+        'know', 'think', 'also', 'very', 'really', 'about', 'some', 'more',
+        'been', 'much', 'even', 'them', 'then', 'than', 'into', 'over',
+        'only', 'here', 'there'
+    ]);
+
+    private static _extractTextKeywords(message: string): string[] {
+        return message
+            .toLowerCase()
+            .replace(/[^a-z\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 4 && !MemoryManager.STOPWORDS.has(w));
+    }
+
     private static _updateTopics(
         existing: TopicMemory[],
         intent: IntentMatch,
+        userMessage: string,
         turn: number
     ): TopicMemory[] {
         const topics = [...existing];
-        const candidates = [intent.subject, ...intent.matchedKeywords]
-            .filter((k): k is string => !!k && k.length > 3);
 
-        for (const candidate of candidates) {
+        // Combine intent-derived keywords with raw text keywords
+        const rawKeywords = MemoryManager._extractTextKeywords(userMessage);
+        const candidates = [
+            intent.subject,
+            ...intent.matchedKeywords,
+            ...rawKeywords,
+        ].filter((k): k is string => !!k && k.length >= 4);
+
+        // Deduplicate candidates
+        const seen = new Set<string>();
+        const unique = candidates.filter(k => {
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+        });
+
+        for (const candidate of unique) {
             const idx = topics.findIndex(t => t.topic === candidate);
             if (idx >= 0) {
                 topics[idx] = {

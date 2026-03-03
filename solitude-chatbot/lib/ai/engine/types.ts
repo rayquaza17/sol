@@ -100,6 +100,8 @@ export interface ConversationState {
     memory: ConversationMemory;
     intensity: EmotionalIntensity;
     lastIntent: IntentType | null;
+    /** How many consecutive out-of-scope responses have been sent this session */
+    outOfScopeCount: number;
 }
 
 // ─── Safety ───────────────────────────────────────────────────────────────────
@@ -143,6 +145,10 @@ export interface EngineResult {
     crisisResponse?: string;
     /** Safety level assessment */
     safetyLevel: SafetyLevel;
+    /** Set when intent is out_of_scope — bypasses Ollama */
+    isOutOfScope?: boolean;
+    /** Pre-built boundary response — only set when isOutOfScope === true */
+    outOfScopeResponse?: string;
     /** Updated conversation state (minus the response content, which comes from LLM) */
     state: ConversationState;
 }

@@ -39,7 +39,8 @@ const RULES = `RULES:
 - Stay within emotional wellbeing topics.
 - Do not provide medical diagnosis.
 - Max 3 sentences.
-- Max 1 question.
+- Only ask a question if it meaningfully helps move the conversation forward. If the response already provides helpful guidance, do not add a question.
+- Avoid ending every response with a question.
 - Avoid clichés.
 - Avoid therapy jargon.
 - Keep tone natural and steady.`;
@@ -54,9 +55,9 @@ const CRISIS_ADDENDUM = `CRISIS DETECTED — This person may be in distress.
 function getIntentInstruction(intentType: IntentType): string {
     switch (intentType) {
         case 'venting':
-            return 'User is venting. Focus on reflection and containment. Do not offer advice or solutions. Acknowledge what they are feeling.';
+            return 'User is venting. Begin with brief validation of what they are feeling. Do not lecture or overwhelm. Acknowledge their experience first.';
         case 'advice_request':
-            return 'User is asking for advice. Provide a gentle, practical suggestion relevant to emotional wellbeing. Keep it brief.';
+            return 'User is explicitly asking for advice. Provide 1\u20132 clear, practical, and realistic suggestions relevant to their situation. Do not respond with only questions. Do not give abstract or philosophical responses. Give the suggestions first. Only add a follow-up question if it would genuinely help clarify or deepen the support.';
         case 'greeting':
             return 'Respond warmly but briefly. Invite them to share what is on their mind.';
         case 'reassurance_seeking':
@@ -72,8 +73,23 @@ function getIntentInstruction(intentType: IntentType): string {
         case 'out_of_scope':
             return 'User has gone off-topic. Gently redirect them back to emotional wellbeing without being dismissive.';
         default:
-            return 'Respond with calm, grounded presence. Reflect without advising.';
+            return 'Respond with calm, grounded presence. Follow the user\'s lead.';
     }
+}
+
+// Topics that warrant a proactive micro-suggestion when venting at moderate+ intensity
+const ACTIONABLE_TOPICS = new Set([
+    'exam', 'exams', 'exam stress', 'study', 'studying',
+    'deadline', 'deadlines', 'workload', 'work', 'assignment', 'assignments',
+    'procrastination', 'sleep', 'sleeping', 'anxiety', 'pressure',
+    'presentation', 'interview', 'project', 'thesis', 'task', 'tasks',
+    'burnout', 'overworked', 'overwhelm', 'overwhelmed',
+]);
+
+function hasActionableTopic(topics: { topic: string }[]): boolean {
+    return topics.some(t =>
+        ACTIONABLE_TOPICS.has(t.topic.toLowerCase())
+    );
 }
 
 // ─── Stage Conditioning ───────────────────────────────────────────────────────
@@ -121,24 +137,59 @@ export function constructPrompt(input: PromptInput): string {
     parts.push(`INTENT INSTRUCTION:\n${getIntentInstruction(intent.type)}`);
     parts.push('');
 
+    // 4b. Proactive micro-suggestion for venting at moderate/high intensity on actionable themes
+    if (
+        intent.type === 'venting' &&
+        (intensity === 'MEDIUM' || intensity === 'HIGH') &&
+        hasActionableTopic(memoryState.topics)
+    ) {
+        const themeNames = memoryState.topics
+            .filter(t => ACTIONABLE_TOPICS.has(t.topic.toLowerCase()))
+            .map(t => t.topic)
+            .slice(0, 3)
+            .join(', ');
+        parts.push(
+            `MICRO-SUGGESTION INSTRUCTION:\nUser is experiencing stress related to: ${themeNames}. After briefly validating their feeling, provide one small, practical, and non-overwhelming suggestion directly related to this theme. Do not prescribe multiple steps. Keep it manageable and specific.`
+        );
+        parts.push('');
+    }
+
     // 5. Stage-based conditioning
     parts.push(`STAGE INSTRUCTION:\n${getStageInstruction(stage)}`);
     parts.push('');
 
-    // 6. Conversation state
-    parts.push('CONVERSATION STATE:');
+    // 6. Conversation context (memory injection)
+    parts.push('CONVERSATION CONTEXT:');
     parts.push(`Intent: ${intent.type}`);
     parts.push(`Stage: ${stage}`);
     parts.push(`Emotional Intensity: ${intensity}`);
 
+    // Emotional tone from trend history
+    const tone = memoryState.toneTrend ?? 'STABLE';
+    parts.push(`Emotional Tone: ${tone}`);
+
+    // Active themes — threshold 1 so topics from turn 1 appear in turn 2 prompts
     const activeTopics = memoryState.topics
-        .filter(t => t.occurrences >= 2)
+        .filter(t => t.occurrences >= 1)
         .sort((a, b) => b.occurrences - a.occurrences)
-        .slice(0, 4);
+        .slice(0, 5);
 
     if (activeTopics.length > 0) {
         parts.push(`Active Themes: ${activeTopics.map(t => t.topic).join(', ')}`);
     }
+
+    // If current message is very short (e.g. "any advice?"), inject last user message
+    // as prior context so LLM understands what the user is referring to
+    const isVagueFollowUp = userMessage.trim().split(/\s+/).length <= 5;
+    if (isVagueFollowUp && memoryState.messages.length > 0) {
+        const lastUserMsg = [...memoryState.messages]
+            .reverse()
+            .find(m => m.role === 'user');
+        if (lastUserMsg) {
+            parts.push(`Prior context: "${lastUserMsg.content.slice(0, 120)}"`);
+        }
+    }
+
     parts.push('');
 
     // 7. User message

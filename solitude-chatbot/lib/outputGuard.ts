@@ -7,6 +7,8 @@
 //   3. Sentence cap (max 3)
 //   4. Question cap (max 1)
 //   5. Domain drift detection → replace with safe fallback
+//   6. Consecutive question suppression → strip trailing question if last
+//      response also ended with a question (avoids relentless questioning)
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -49,7 +51,6 @@ function stripAILeaks(text: string): string {
     const lower = text.toLowerCase();
     for (const phrase of AI_LEAK_PHRASES) {
         if (lower.includes(phrase)) {
-            // Remove the sentence containing the leak
             const sentences = splitSentences(text);
             const cleaned = sentences.filter(
                 s => !AI_LEAK_PHRASES.some(p => s.toLowerCase().includes(p))
@@ -65,12 +66,20 @@ function hasDomainDrift(text: string): boolean {
     return matches >= 2;
 }
 
+/** Returns true if text's last sentence ends with a question mark. */
+function endsWithQuestion(text: string): boolean {
+    return text.trimEnd().endsWith('?');
+}
+
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 /**
  * Validates and post-processes LLM output before returning to the frontend.
+ *
+ * @param text         Raw LLM output
+ * @param lastResponse Previous assistant response (used for consecutive question suppression)
  */
-export function validateOutput(text: string): string {
+export function validateOutput(text: string, lastResponse?: string): string {
     // 1. Trim
     let result = text.trim();
     if (!result) return SAFE_FALLBACK;
@@ -97,6 +106,16 @@ export function validateOutput(text: string): string {
         }
         return true;
     });
+
+    // 6. Consecutive question suppression
+    // If the previous response already ended with a question, drop any trailing
+    // question from this response to avoid relentless back-to-back questioning.
+    if (lastResponse && endsWithQuestion(lastResponse)) {
+        const last = sentences[sentences.length - 1];
+        if (last && last.includes('?')) {
+            sentences = sentences.slice(0, -1);
+        }
+    }
 
     return sentences.join(' ').trim() || SAFE_FALLBACK;
 }

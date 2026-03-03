@@ -3,6 +3,7 @@ import { MemoryManager } from './memory';
 import { IntentClassifier } from './intent';
 import { SafetyMonitor } from './safety-monitor';
 import { CrisisMonitor } from './crisisMonitor';
+import { DomainGuard } from './domain';
 import { StageTracker } from './stage-tracker';
 import { detectIntensity } from './state';
 import { constructPrompt, PromptInput } from '../../promptConstructor';
@@ -30,13 +31,41 @@ export class ConversationEngine {
         return {
             memory: MemoryManager.createInitial(),
             intensity: 'LOW',
-            lastIntent: null
+            lastIntent: null,
+            outOfScopeCount: 0,
         };
     }
 
     static process(message: string, state: ConversationState): EngineResult {
         // ── 1. IntentClassifier ───────────────────────────────────────────────
         const intent = IntentClassifier.classify(message, state.memory);
+
+        // ── 1b. Out-of-scope: deterministic bypass ────────────────────────────
+        // Do NOT send off-topic queries to LLaMA. Respond with a calm boundary.
+        if (DomainGuard.blocked(message, intent)) {
+            // Detect repeat offense — user already got a boundary response last turn
+            const isRepeat = state.lastIntent === 'out_of_scope';
+
+            const outOfScopeResponse = isRepeat
+                ? "I'm not able to help with that. I'm here to support emotional wellbeing if you'd like to talk about something related."
+                : "That's outside what I'm built for. I focus on emotional wellbeing and support. If something's been weighing on you, I'm here for that.";
+
+            return {
+                prompt: '',
+                intent: { ...intent, type: 'out_of_scope' },
+                isCrisis: false,
+                crisisLevel: 1,
+                safetyLevel: 'SAFE',
+                isOutOfScope: true,
+                outOfScopeResponse,
+                state: {
+                    memory: state.memory,
+                    intensity: 'LOW',
+                    lastIntent: 'out_of_scope',
+                    outOfScopeCount: (state.outOfScopeCount ?? 0) + 1,
+                },
+            };
+        }
 
         // ── 2. CrisisMonitor ──────────────────────────────────────────────────
         const crisis = CrisisMonitor.assess(message);
@@ -55,6 +84,7 @@ export class ConversationEngine {
                     memory: state.memory,
                     intensity: 'HIGH',
                     lastIntent: 'crisis_signal',
+                    outOfScopeCount: 0,
                 },
             };
         }
@@ -98,6 +128,7 @@ export class ConversationEngine {
                 memory: state.memory,
                 intensity,
                 lastIntent: effectiveIntent.type,
+                outOfScopeCount: 0,
             },
         };
     }
@@ -126,6 +157,7 @@ export class ConversationEngine {
             memory: newMemory,
             intensity,
             lastIntent: intent.type,
+            outOfScopeCount: 0,
         };
     }
 }
