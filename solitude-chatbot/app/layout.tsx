@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Outfit, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { PageTransition } from "./components/PageTransition";
+import { AuthProvider } from "./context/AuthProvider";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -33,9 +34,11 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${outfit.variable} ${playfair.variable} antialiased`}
       >
-        <PageTransition>
-          {children}
-        </PageTransition>
+        <AuthProvider>
+          <PageTransition>
+            {children}
+          </PageTransition>
+        </AuthProvider>
       </body>
     </html>
   );

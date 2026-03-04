@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mail, Lock, User, Eye, EyeOff, ArrowRight, Wind } from "lucide-react";
+import {
+    Sparkles, Mail, Lock, User, Eye, EyeOff,
+    ArrowRight, Wind, AlertCircle, CheckCircle2
+} from "lucide-react";
 import Link from "next/link";
 import { AnimatedBackground } from "../components/AnimatedBackground";
+import { supabase } from "@/lib/supabaseClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,27 +29,35 @@ interface InputFieldProps {
     showPassword?: boolean;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function StatusBanner({ type, message }: { type: "error" | "success"; message: string }) {
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium ${type === "error"
+                ? "bg-red-500/10 border border-red-500/20 text-red-300"
+                : "bg-sol-teal/10 border border-sol-teal/20 text-sol-teal"
+                }`}
+        >
+            {type === "error"
+                ? <AlertCircle size={16} className="shrink-0" />
+                : <CheckCircle2 size={16} className="shrink-0" />}
+            {message}
+        </motion.div>
+    );
+}
+
 // ─── Input Field Component ────────────────────────────────────────────────────
 
 function InputField({
-    id,
-    label,
-    type,
-    value,
-    onChange,
-    placeholder,
-    icon,
-    autoComplete,
-    showToggle,
-    onToggle,
-    showPassword,
+    id, label, type, value, onChange, placeholder,
+    icon, autoComplete, showToggle, onToggle, showPassword,
 }: InputFieldProps) {
     return (
         <div className="flex flex-col gap-2">
-            <label
-                htmlFor={id}
-                className="text-xs font-semibold uppercase tracking-widest text-slate-400"
-            >
+            <label htmlFor={id} className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                 {label}
             </label>
             <div className="relative group">
@@ -78,50 +91,49 @@ function InputField({
 // ─── Login Form ───────────────────────────────────────────────────────────────
 
 function LoginForm() {
+    const router = useRouter();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         setLoading(true);
-        // TODO: wire to auth backend
-        await new Promise((r) => setTimeout(r, 1200));
-        setLoading(false);
+
+        const { error: supaError } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (supaError) {
+            setError(supaError.message);
+            setLoading(false);
+        } else {
+            // Signed in — go to chat
+            router.push("/chat");
+        }
     };
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+            {error && <StatusBanner type="error" message={error} />}
+
             <InputField
-                id="login-email"
-                label="Email"
-                type="email"
-                value={email}
-                onChange={setEmail}
-                placeholder="you@example.com"
-                icon={<Mail size={16} />}
+                id="login-email" label="Email" type="email"
+                value={email} onChange={setEmail}
+                placeholder="you@example.com" icon={<Mail size={16} />}
                 autoComplete="email"
             />
             <InputField
-                id="login-password"
-                label="Password"
-                type="password"
-                value={password}
-                onChange={setPassword}
-                placeholder="••••••••"
-                icon={<Lock size={16} />}
+                id="login-password" label="Password" type="password"
+                value={password} onChange={setPassword}
+                placeholder="••••••••" icon={<Lock size={16} />}
                 autoComplete="current-password"
-                showToggle
-                onToggle={() => setShowPassword((p) => !p)}
-                showPassword={showPassword}
+                showToggle onToggle={() => setShowPassword(p => !p)} showPassword={showPassword}
             />
 
             <div className="flex justify-end">
-                <Link
-                    href="/forgot-password"
-                    className="text-xs text-slate-500 hover:text-sol-teal transition-colors duration-200"
-                >
+                <Link href="/forgot-password" className="text-xs text-slate-500 hover:text-sol-teal transition-colors duration-200">
                     Forgot password?
                 </Link>
             </div>
@@ -143,9 +155,7 @@ function LoginForm() {
                         Signing in…
                     </span>
                 ) : (
-                    <>
-                        Enter Sanctuary <Wind size={17} />
-                    </>
+                    <>Enter Sanctuary <Wind size={17} /></>
                 )}
             </motion.button>
         </form>
@@ -160,64 +170,85 @@ function RegisterForm() {
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        // TODO: wire to auth backend
-        await new Promise((r) => setTimeout(r, 1200));
-        setLoading(false);
-    };
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState(false);
 
     const isStrong = password.length >= 8;
 
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        setLoading(true);
+
+        const { error: supaError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: { full_name: name },
+            },
+        });
+
+        if (supaError) {
+            setError(supaError.message);
+        } else {
+            setSuccess(true);
+        }
+        setLoading(false);
+    };
+
+    if (success) {
+        return (
+            <div className="flex flex-col items-center gap-5 py-4 text-center">
+                <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="w-16 h-16 rounded-2xl bg-sol-teal/15 border border-sol-teal/20 flex items-center justify-center text-sol-teal"
+                >
+                    <CheckCircle2 size={30} />
+                </motion.div>
+                <div>
+                    <h3 className="text-white font-heading font-bold text-lg mb-1">Check your inbox</h3>
+                    <p className="text-sm text-slate-400">
+                        We've sent a confirmation link to <span className="text-white">{email}</span>.
+                        Click it to activate your account.
+                    </p>
+                </div>
+                <Link href="/chat" className="btn-sol-secondary !py-3 !rounded-2xl text-sm w-full text-center">
+                    Continue as guest for now
+                </Link>
+            </div>
+        );
+    }
+
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+            {error && <StatusBanner type="error" message={error} />}
+
             <InputField
-                id="reg-name"
-                label="Name"
-                type="text"
-                value={name}
-                onChange={setName}
-                placeholder="Your name"
-                icon={<User size={16} />}
-                autoComplete="name"
+                id="reg-name" label="Name" type="text"
+                value={name} onChange={setName}
+                placeholder="Your name" icon={<User size={16} />} autoComplete="name"
             />
             <InputField
-                id="reg-email"
-                label="Email"
-                type="email"
-                value={email}
-                onChange={setEmail}
-                placeholder="you@example.com"
-                icon={<Mail size={16} />}
-                autoComplete="email"
+                id="reg-email" label="Email" type="email"
+                value={email} onChange={setEmail}
+                placeholder="you@example.com" icon={<Mail size={16} />} autoComplete="email"
             />
             <div className="flex flex-col gap-2">
                 <InputField
-                    id="reg-password"
-                    label="Password"
-                    type="password"
-                    value={password}
-                    onChange={setPassword}
-                    placeholder="At least 8 characters"
-                    icon={<Lock size={16} />}
+                    id="reg-password" label="Password" type="password"
+                    value={password} onChange={setPassword}
+                    placeholder="At least 8 characters" icon={<Lock size={16} />}
                     autoComplete="new-password"
-                    showToggle
-                    onToggle={() => setShowPassword((p) => !p)}
-                    showPassword={showPassword}
+                    showToggle onToggle={() => setShowPassword(p => !p)} showPassword={showPassword}
                 />
-                {/* Strength bar */}
                 {password.length > 0 && (
                     <div className="flex items-center gap-3">
                         <div className="flex-1 h-1 rounded-full bg-white/[0.06] overflow-hidden">
                             <motion.div
                                 initial={{ width: 0 }}
-                                animate={{
-                                    width: isStrong ? "100%" : `${(password.length / 8) * 100}%`,
-                                }}
-                                className={`h-full rounded-full transition-colors duration-500 ${isStrong ? "bg-sol-teal" : "bg-orange-400/70"
-                                    }`}
+                                animate={{ width: isStrong ? "100%" : `${(password.length / 8) * 100}%` }}
+                                className={`h-full rounded-full transition-colors duration-500 ${isStrong ? "bg-sol-teal" : "bg-orange-400/70"}`}
                             />
                         </div>
                         <span className={`text-[11px] font-medium ${isStrong ? "text-sol-teal" : "text-orange-400/80"}`}>
@@ -231,8 +262,7 @@ function RegisterForm() {
                 By creating an account, you agree to our{" "}
                 <Link href="/privacy" className="text-sol-teal/80 hover:text-sol-teal underline underline-offset-2 transition-colors">
                     Privacy Policy
-                </Link>
-                . Your conversations are private and never shared.
+                </Link>. Your conversations are private and never shared.
             </p>
 
             <motion.button
@@ -252,9 +282,7 @@ function RegisterForm() {
                         Creating account…
                     </span>
                 ) : (
-                    <>
-                        Create Account <ArrowRight size={17} />
-                    </>
+                    <>Create Account <ArrowRight size={17} /></>
                 )}
             </motion.button>
         </form>
@@ -272,11 +300,7 @@ export default function AuthPage() {
 
             {/* Back to home */}
             <div className="fixed top-6 left-6 z-50">
-                <Link
-                    href="/"
-                    className="flex items-center gap-3 group"
-                    aria-label="Back to Solitude home"
-                >
+                <Link href="/" className="flex items-center gap-3 group" aria-label="Back to Solitude home">
                     <div className="w-10 h-10 bg-sol-teal/15 rounded-xl flex items-center justify-center text-sol-teal group-hover:scale-105 transition-transform duration-300 border border-sol-teal/20">
                         <Sparkles size={20} className="group-hover:animate-pulse" />
                     </div>
@@ -291,14 +315,12 @@ export default function AuthPage() {
                 initial={{ opacity: 0, y: 24, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                className="w-full max-w-md"
+                className="w-full max-w-md relative"
             >
-                {/* Glass card */}
                 <div className="bg-sol-glass backdrop-blur-3xl border border-sol-glass-border rounded-[2.5rem] overflow-hidden shadow-2xl">
 
                     {/* Header */}
                     <div className="px-8 pt-10 pb-6 text-center border-b border-white/[0.05]">
-                        {/* Animated icon */}
                         <motion.div
                             animate={{ scale: [1, 1.08, 1], opacity: [0.8, 1, 0.8] }}
                             transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
@@ -311,9 +333,7 @@ export default function AuthPage() {
                             {tab === "login" ? "Welcome back" : "Begin your journey"}
                         </h1>
                         <p className="text-sm text-slate-400">
-                            {tab === "login"
-                                ? "Your sanctuary is waiting for you."
-                                : "A calm space, just for you."}
+                            {tab === "login" ? "Your sanctuary is waiting for you." : "A calm space, just for you."}
                         </p>
                     </div>
 
@@ -323,8 +343,7 @@ export default function AuthPage() {
                             <button
                                 key={t}
                                 onClick={() => setTab(t)}
-                                className={`flex-1 py-4 text-sm font-semibold uppercase tracking-widest transition-all duration-300 relative ${tab === t ? "text-sol-teal" : "text-slate-500 hover:text-slate-300"
-                                    }`}
+                                className={`flex-1 py-4 text-sm font-semibold uppercase tracking-widest transition-all duration-300 relative ${tab === t ? "text-sol-teal" : "text-slate-500 hover:text-slate-300"}`}
                                 aria-selected={tab === t}
                             >
                                 {t === "login" ? "Sign In" : "Register"}
@@ -360,7 +379,7 @@ export default function AuthPage() {
                             <div className="flex-1 h-px bg-white/[0.06]" />
                         </div>
 
-                        {/* Continue without account */}
+                        {/* Guest access */}
                         <Link href="/chat">
                             <motion.div
                                 whileHover={{ scale: 1.01 }}
@@ -383,7 +402,7 @@ export default function AuthPage() {
                     </div>
                 </div>
 
-                {/* Subtle bottom glow */}
+                {/* Bottom glow */}
                 <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-96 h-32 bg-sol-teal/10 rounded-full blur-3xl pointer-events-none" />
             </motion.div>
         </div>
