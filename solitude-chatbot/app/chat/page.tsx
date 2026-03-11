@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Sparkles, ArrowLeft } from 'lucide-react';
 import ChatInterface from './ChatInterface';
 import { AntiGravityBackground } from '../components/chat/AntiGravityBackground';
+import CalmSidePanel from '../components/chat/CalmSidePanel';
 
 export default function ChatPage() {
     return (
@@ -23,8 +24,13 @@ export default function ChatPage() {
                 </div>
             </nav>
 
-            <main className="w-full h-screen pt-24 pb-6 px-4 md:px-6 flex flex-col relative z-10">
-                <ChatInterface />
+            <main className="w-full h-screen pt-24 pb-6 px-4 md:px-6 relative z-10 overflow-y-auto xl:overflow-hidden lg:scrollbar-none">
+                <div className="max-w-[85rem] mx-auto h-full flex flex-col xl:grid xl:grid-cols-[1fr_320px] gap-6 items-start pb-20 xl:pb-0">
+                    <div className="w-full flex-shrink-0">
+                        <ChatInterface />
+                    </div>
+                    <CalmSidePanel />
+                </div>
             </main>
         </div>
     );
