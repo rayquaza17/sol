@@ -7,6 +7,7 @@ import Link from 'next/link';
 
 import { MoodLevel } from '@/lib/ai/engine/types';
 import PromptSuggestions from '@/app/components/PromptSuggestions';
+import { CursorGlow } from '@/app/components/chat/CursorGlow';
 
 interface MoodOption {
     level: 1 | 2 | 3 | 4 | 5;
@@ -282,7 +283,8 @@ export default function ChatInterface() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100dvh-7rem)] max-w-4xl mx-auto w-full bg-sol-glass backdrop-blur-3xl border border-sol-glass-border rounded-[3rem] overflow-hidden shadow-2xl relative z-10">
+        <div className="flex flex-col h-[calc(100dvh-7rem)] max-w-4xl mx-auto w-full bg-sol-glass backdrop-blur-3xl border border-sol-glass-border rounded-[3rem] overflow-hidden shadow-2xl relative z-10 transition-colors duration-500">
+            <CursorGlow isActive={isLoading} />
             {/* Chat Header */}
             <header className="px-10 py-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02] flex-shrink-0">
                 <div className="flex items-center gap-5">
@@ -316,6 +318,7 @@ export default function ChatInterface() {
                     <Link
                         href="/"
                         className="btn-sol-secondary !px-6 !py-3 !text-sm gap-2 rounded-2xl"
+
                     >
                         <LogOut size={18} /> Exit
                     </Link>
@@ -341,7 +344,7 @@ export default function ChatInterface() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.5 }}
-                            className="absolute inset-0 bg-sol-deep/98 backdrop-blur-2xl flex items-center justify-center z-50"
+                            className="absolute inset-x-0 bottom-0 top-0 bg-sol-deep/98 backdrop-blur-2xl flex items-center justify-center z-50 rounded-[3rem]"
                             role="dialog"
                             aria-modal="true"
                             aria-labelledby="mood-checkin-title"
@@ -350,7 +353,7 @@ export default function ChatInterface() {
                                 initial={shouldReduceMotion ? { opacity: 0 } : { scale: 0.9, y: 20 }}
                                 animate={shouldReduceMotion ? { opacity: 1 } : { scale: 1, y: 0 }}
                                 transition={{ duration: 0.5, delay: 0.2 }}
-                                className="text-center max-w-md px-8"
+                                className="text-center max-w-md px-8 py-10 bg-sol-deep/50 rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden"
                             >
                                 <h3 id="mood-checkin-title" className="text-2xl font-heading font-bold text-white mb-3">
                                     How are you feeling right now?
@@ -367,11 +370,11 @@ export default function ChatInterface() {
                                             whileHover={shouldReduceMotion ? {} : { scale: 1.15, y: -5 }}
                                             whileTap={shouldReduceMotion ? {} : { scale: 0.95 }}
                                             transition={{ duration: 0.2 }}
-                                            className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition-all duration-[250ms] group outline-none focus-visible:ring-2 focus-visible:ring-sol-teal"
+                                            className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-white/10 hover:bg-white/20 shadow-sm transition-all duration-[250ms] group outline-none focus-visible:ring-2 focus-visible:ring-sol-teal"
                                             aria-label={`I feel ${mood.label}`}
                                         >
                                             <span className="text-4xl" aria-hidden="true">{mood.emoji}</span>
-                                            <span className="text-xs text-slate-200 group-hover:text-white transition-colors">
+                                            <span className="text-xs font-medium text-slate-200 group-hover:text-white transition-colors">
                                                 {mood.label}
                                             </span>
                                         </motion.button>
@@ -382,7 +385,7 @@ export default function ChatInterface() {
                                     onClick={() => setShowMoodCheckIn(false)}
                                     whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
                                     whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
-                                    className="text-sm text-slate-400 hover:text-white transition-colors duration-[250ms] focus-visible:ring-2 focus-visible:ring-sol-teal rounded-lg px-4 py-2"
+                                    className="text-sm text-slate-400 hover:text-white font-medium transition-colors duration-[250ms] focus-visible:ring-2 focus-visible:ring-sol-teal rounded-lg px-4 py-2"
                                     aria-label="Skip mood check-in for now"
                                 >
                                     Skip for now
@@ -476,7 +479,6 @@ export default function ChatInterface() {
                             </div>
                         </motion.div>
                     )}
-
                 </AnimatePresence>
 
                 {/* Idle State Quote Display */}
@@ -531,7 +533,7 @@ export default function ChatInterface() {
                         <textarea
                             ref={textareaRef}
                             rows={1}
-                            className={`w-full bg-white/[0.03] backdrop-blur-3xl border border-white/10 focus:border-sol-teal/50 focus:ring-8 focus:ring-sol-teal/5 px-8 py-6 rounded-[2.5rem] text-white placeholder:text-slate-500 outline-none text-lg leading-relaxed resize-none overflow-hidden transition-all duration-300 ${voiceSupported ? 'pr-36' : 'pr-20'}`}
+                            className={`w-full bg-slate-800 border border-white/5 focus:border-sol-teal/50 focus:ring-8 focus:ring-sol-teal/5 px-8 py-6 rounded-[2.5rem] text-white placeholder:text-slate-400 outline-none text-lg leading-relaxed resize-none overflow-hidden transition-all duration-300 ${voiceSupported ? 'pr-36' : 'pr-20'}`}
                             placeholder="Share your thoughts gently..."
                             value={input}
                             onChange={onInputChange}

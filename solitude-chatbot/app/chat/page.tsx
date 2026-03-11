@@ -1,16 +1,13 @@
 import Link from 'next/link';
 import { Sparkles, ArrowLeft } from 'lucide-react';
 import ChatInterface from './ChatInterface';
+import { AntiGravityBackground } from '../components/chat/AntiGravityBackground';
 
 export default function ChatPage() {
     return (
-        <div className="min-h-screen bg-sol-deep flex flex-col items-center justify-center relative overflow-hidden">
-            {/* Ambient Background */}
-            <div className="fixed inset-0 pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-sol-teal/5 rounded-full blur-[120px]" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-sol-purple/10 rounded-full blur-[120px]" />
-            </div>
-
+        <div className="min-h-screen bg-transparent flex flex-col items-center justify-center relative overflow-hidden">
+            <AntiGravityBackground />
+            
             {/* Minimal Nav - consistent padding with other pages */}
             <nav className="fixed top-0 w-full h-24 flex items-center justify-between px-6 md:px-12 z-20">
                 <Link href="/" className="group flex items-center gap-3 transition-opacity hover:opacity-80">
