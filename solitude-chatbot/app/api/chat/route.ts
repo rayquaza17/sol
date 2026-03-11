@@ -108,7 +108,8 @@ export async function POST(req: Request) {
 
         // ── Step 4: Output Guard ──────────────────────────────────────────────
         const lastResponse = currentState.memory.recentResponses.at(-1);
-        const finalContent = validateOutput(generatedText, lastResponse);
+        const recentResponses = currentState.memory.recentResponses.slice(-3);
+        const finalContent = validateOutput(generatedText, lastResponse, recentResponses);
 
         // ── Step 5: Update memory ─────────────────────────────────────────────
         const updatedState = ConversationEngine.updateMemory(

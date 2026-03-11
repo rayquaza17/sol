@@ -11,6 +11,11 @@ import {
 import Link from "next/link";
 import { AnimatedBackground } from "../components/AnimatedBackground";
 import { useAuth } from "../context/AuthProvider";
+import { MoodCheckIn } from "../components/dashboard/MoodCheckIn";
+import { ReflectionBox } from "../components/dashboard/ReflectionBox";
+import { ActivityStats } from "../components/dashboard/ActivityStats";
+import { DailyReminder } from "../components/dashboard/DailyReminder";
+
 
 // ─── Animation Variants ───────────────────────────────────────────────────────
 
@@ -89,45 +94,13 @@ function QuickAction({
     );
 }
 
-function MoodBar({ day, level }: { day: string; level: number }) {
-    const colors = ["bg-slate-700", "bg-blue-500/60", "bg-teal-400/70", "bg-sol-teal", "bg-sol-accent"];
-    return (
-        <div className="flex flex-col items-center gap-2">
-            <div className="w-6 rounded-full bg-white/[0.05] flex flex-col justify-end overflow-hidden" style={{ height: 56 }}>
-                <motion.div
-                    initial={{ height: 0 }}
-                    animate={{ height: `${(level / 4) * 100}%` }}
-                    transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.3 }}
-                    className={`w-full rounded-full ${colors[level]}`}
-                />
-            </div>
-            <span className="text-[10px] text-slate-600 font-medium">{day}</span>
-        </div>
-    );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const MOOD_DATA = [
-    { day: "Mon", level: 2 },
-    { day: "Tue", level: 3 },
-    { day: "Wed", level: 2 },
-    { day: "Thu", level: 4 },
-    { day: "Fri", level: 3 },
-    { day: "Sat", level: 4 },
-    { day: "Sun", level: 3 },
-];
-
-const TIPS = [
-    "Try 5 minutes of deep breathing before your next session.",
-    "Journaling for 3 minutes a day can reduce stress significantly.",
-    "Small walks between tasks reset your emotional state.",
-    "It's okay to not be okay — your feelings are valid.",
-];
-
 export default function DashboardPage() {
+
     const { user, loading, signOut } = useAuth();
     const router = useRouter();
+
 
     // Redirect to /auth if not logged in
     useEffect(() => {
@@ -152,9 +125,9 @@ export default function DashboardPage() {
     const displayName = user.user_metadata?.full_name as string | undefined;
     const firstName = displayName?.split(" ")[0] ?? user.email?.split("@")[0] ?? "there";
     const avatarLetter = (displayName?.[0] ?? user.email?.[0] ?? "U").toUpperCase();
-    const currentTip = TIPS[new Date().getDay() % TIPS.length];
 
     const handleLogout = async () => {
+
         await signOut();
         router.push("/");
     };
@@ -224,30 +197,30 @@ export default function DashboardPage() {
                         </Link>
                     </motion.div>
 
-                    {/* ── Daily tip ── */}
-                    <motion.div
-                        variants={item}
-                        className="flex items-start gap-4 px-6 py-5 rounded-3xl bg-sol-teal/[0.07] border border-sol-teal/20"
-                    >
-                        <div className="w-9 h-9 rounded-2xl bg-sol-teal/15 flex items-center justify-center text-sol-teal shrink-0">
-                            <Star size={17} />
-                        </div>
-                        <div>
-                            <p className="text-xs font-semibold uppercase tracking-widest text-sol-teal mb-1">Today's reminder</p>
-                            <p className="text-sm text-slate-300 leading-relaxed">{currentTip}</p>
-                        </div>
-                    </motion.div>
+                    {/* ── Personalization Row 1: Mood & Reminder ── */}
 
-                    {/* ── Stats row ── */}
-                    <motion.div variants={container} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <StatCard icon={<Flame size={18} />} label="Day streak" value="7" sub="Keep going!" accent />
-                        <StatCard icon={<MessageCircle size={18} />} label="Sessions" value="12" sub="This month" />
-                        <StatCard icon={<Heart size={18} />} label="Mood avg." value="3.4 / 5" sub="This week" />
-                        <StatCard icon={<Clock size={18} />} label="Time spent" value="2h 14m" sub="Lifetime" />
-                    </motion.div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <motion.div variants={item}>
+                            <MoodCheckIn />
+                        </motion.div>
+                        <motion.div variants={item}>
+                            <DailyReminder />
+                        </motion.div>
+                    </div>
+
+                    {/* ── Personalization Row 2: Reflection & Stats ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <motion.div variants={item}>
+                            <ReflectionBox />
+                        </motion.div>
+                        <motion.div variants={item}>
+                            <ActivityStats />
+                        </motion.div>
+                    </div>
 
                     {/* ── Two-column: Quick actions + Mood chart ── */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+
 
                         {/* Quick actions */}
                         <motion.div variants={item} className="flex flex-col gap-3">
@@ -290,25 +263,9 @@ export default function DashboardPage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-end justify-between px-2">
-                                {MOOD_DATA.map((d) => (
-                                    <MoodBar key={d.day} day={d.day} level={d.level} />
-                                ))}
-                            </div>
-
-                            <div className="flex items-center gap-4 pt-1 border-t border-white/[0.05]">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-sol-teal" />
-                                    <span className="text-xs text-slate-500">Good</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500/60" />
-                                    <span className="text-xs text-slate-500">Neutral</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-                                    <span className="text-xs text-slate-500">Low</span>
-                                </div>
+                            <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
+                                <p className="text-slate-400 font-medium mb-1">No chart data</p>
+                                <p className="text-xs text-slate-500">Log your mood daily to start building your chart.</p>
                             </div>
                         </motion.div>
                     </div>
@@ -316,31 +273,17 @@ export default function DashboardPage() {
                     {/* ── Recent activity ── */}
                     <motion.div variants={item}>
                         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4">Recent sessions</p>
-                        <div className="flex flex-col gap-3">
-                            {[
-                                { label: "Talked about exam stress", time: "Today, 2:30 PM", icon: <TrendingUp size={15} />, tag: "Venting" },
-                                { label: "Explored sleep anxiety", time: "Yesterday, 9:15 PM", icon: <Heart size={15} />, tag: "Reflecting" },
-                                { label: "Asked for advice on deadlines", time: "Mar 2, 11:00 AM", icon: <MessageCircle size={15} />, tag: "Advice" },
-                            ].map((session, i) => (
-                                <motion.div
-                                    key={i}
-                                    variants={item}
-                                    className="flex items-center gap-4 px-5 py-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-colors"
-                                >
-                                    <div className="w-8 h-8 rounded-xl bg-white/[0.07] flex items-center justify-center text-slate-400 shrink-0">
-                                        {session.icon}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-white font-medium truncate">{session.label}</p>
-                                        <p className="text-xs text-slate-600 flex items-center gap-1 mt-0.5">
-                                            <Calendar size={11} /> {session.time}
-                                        </p>
-                                    </div>
-                                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/[0.06] text-slate-400 border border-white/[0.08] shrink-0">
-                                        {session.tag}
-                                    </span>
-                                </motion.div>
-                            ))}
+                        <div className="flex flex-col items-center justify-center py-10 px-6 rounded-3xl bg-white/[0.02] border border-white/[0.05] border-dashed text-center">
+                            <div className="w-12 h-12 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-500 mb-4">
+                                <MessageCircle size={20} />
+                            </div>
+                            <p className="text-slate-300 font-medium mb-1">No recent sessions yet</p>
+                            <p className="text-sm text-slate-500 max-w-[250px] mb-6">Your conversation history will appear here once you start chatting with Solitude.</p>
+                            <Link href="/chat">
+                                <button className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10">
+                                    Start a Conversation
+                                </button>
+                            </Link>
                         </div>
                     </motion.div>
 

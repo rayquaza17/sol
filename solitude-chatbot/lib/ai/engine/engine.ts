@@ -47,8 +47,8 @@ export class ConversationEngine {
             const isRepeat = state.lastIntent === 'out_of_scope';
 
             const outOfScopeResponse = isRepeat
-                ? "I'm not able to help with that. I'm here to support emotional wellbeing if you'd like to talk about something related."
-                : "That's outside what I'm built for. I focus on emotional wellbeing and support. If something's been weighing on you, I'm here for that.";
+                ? "That's still a bit outside my focus — I'm here for emotional wellbeing and support. If something's been on your mind, I'm happy to talk."
+                : "That's outside what I'm built for. I focus on emotional wellbeing and support — but if something's been weighing on you lately, I'm here to listen.";
 
             return {
                 prompt: '',

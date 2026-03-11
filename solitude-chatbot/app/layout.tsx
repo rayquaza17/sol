@@ -1,22 +1,23 @@
 import type { Metadata } from "next";
-import { Inter, Outfit, Playfair_Display } from "next/font/google";
+import { Plus_Jakarta_Sans, Sora, Newsreader } from "next/font/google";
 import "./globals.css";
 import { PageTransition } from "./components/PageTransition";
 import { AuthProvider } from "./context/AuthProvider";
 
-const inter = Inter({
-  variable: "--font-inter",
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
 });
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const sora = Sora({
+  variable: "--font-sora",
   subsets: ["latin"],
 });
 
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
   subsets: ["latin"],
+  style: ['normal', 'italic'],
 });
 
 export const metadata: Metadata = {
@@ -32,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth">
       <body
-        className={`${inter.variable} ${outfit.variable} ${playfair.variable} antialiased`}
+        className={`${jakarta.variable} ${sora.variable} ${newsreader.variable} antialiased`}
       >
         <AuthProvider>
           <PageTransition>

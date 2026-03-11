@@ -6,6 +6,7 @@ import { Send, Sparkles, LogOut, Heart, Info, Mic, MicOff } from 'lucide-react';
 import Link from 'next/link';
 
 import { MoodLevel } from '@/lib/ai/engine/types';
+import PromptSuggestions from '@/app/components/PromptSuggestions';
 
 interface MoodOption {
     level: 1 | 2 | 3 | 4 | 5;
@@ -166,14 +167,28 @@ export default function ChatInterface() {
         };
     }, []);
 
+    // ── Context Recovery: vague-input patterns ───────────────────────────────
+    const VAGUE_PATTERN = /^(help|idk|nothing|i\s*don'?t\s*know|\.\.+|ok|okay|hmm+|uh+|um+|fine|whatever|dunno|nah|meh)$/i;
+    const CONTEXT_RECOVERY_RESPONSE =
+        "I'm here to listen. If you'd like, you could tell me what's been on your mind lately, " +
+        "ask for advice about something specific, or just talk about how you're feeling. " +
+        "There's no pressure — take your time.";
+
+    const isVagueInput = (text: string): boolean => {
+        const trimmed = text.trim();
+        return trimmed.length <= 20 && VAGUE_PATTERN.test(trimmed);
+    };
+
     const handleSend = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (!input.trim() || isLoading) return;
 
+        const trimmedInput = input.trim();
+
         const userMsg: LocalMessage = {
             id: Date.now().toString(),
             role: 'user',
-            content: input.trim(),
+            content: trimmedInput,
             createdAt: new Date()
         };
 
@@ -182,6 +197,21 @@ export default function ChatInterface() {
         setIsLoading(true);
         setIsUserScrolling(false);
         resetIdleTimer();
+
+        // ── Context Recovery: handle vague/unclear inputs locally ─────────────
+        if (isVagueInput(trimmedInput)) {
+            setTimeout(() => {
+                const recoveryMsg: LocalMessage = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant',
+                    content: CONTEXT_RECOVERY_RESPONSE,
+                    createdAt: new Date()
+                };
+                setMessages(prev => [...prev, recoveryMsg]);
+                setIsLoading(false);
+            }, 900);
+            return;
+        }
 
         // Simulate "thinking" time
         const delay = Math.random() * 1000 + 1000; // 1-2 seconds
@@ -362,6 +392,18 @@ export default function ChatInterface() {
                     )}
                 </AnimatePresence>
 
+                {/* Conversation Starter Prompts — shown only before any user message */}
+                <AnimatePresence>
+                    {messages.length === 1 && !showMoodCheckIn && (
+                        <PromptSuggestions
+                            onSelect={(text) => {
+                                setInput(text);
+                                textareaRef.current?.focus();
+                            }}
+                        />
+                    )}
+                </AnimatePresence>
+
                 <AnimatePresence initial={false}>
                     {messages.map((msg: LocalMessage, index: number) => (
                         <motion.div
@@ -393,32 +435,48 @@ export default function ChatInterface() {
 
                     {isLoading && messages[messages.length - 1]?.role === 'user' && (
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
+                            key="typing-indicator"
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                            transition={{ duration: 0.35, ease: 'easeOut' }}
                             className="flex justify-start"
+                            role="status"
+                            aria-label="Solitude is typing"
                         >
-                            <div className="bg-sol-glass backdrop-blur-3xl px-8 py-5 rounded-[2rem] rounded-bl-[0.5rem] border border-white/5 flex items-center gap-3">
-                                {[0, 1, 2].map((i) => (
-                                    <motion.span
-                                        key={i}
-                                        animate={{
-                                            scale: [1, 1.4, 1],
-                                            opacity: [0.3, 0.9, 0.3],
-                                            y: [0, -4, 0]
-                                        }}
-                                        transition={{
-                                            duration: 2.5,
-                                            repeat: Infinity,
-                                            delay: i * 0.3,
-                                            ease: "easeInOut"
-                                        }}
-                                        className="w-2.5 h-2.5 bg-sol-teal rounded-full"
-                                    />
-                                ))}
+                            <div className="bg-sol-glass backdrop-blur-3xl px-7 py-4 rounded-[2rem] rounded-bl-[0.5rem] border border-white/5 flex items-center gap-4 shadow-sm">
+                                {/* Icon */}
+                                <Sparkles size={14} className="text-sol-teal opacity-70 flex-shrink-0" aria-hidden="true" />
+
+                                {/* Label */}
+                                <span className="text-sm text-slate-400 italic font-light tracking-wide select-none">
+                                    Solitude is typing
+                                </span>
+
+                                {/* Animated dots */}
+                                <span className="flex items-center gap-1.5" aria-hidden="true">
+                                    {[0, 1, 2].map((i) => (
+                                        <motion.span
+                                            key={i}
+                                            animate={{
+                                                scale: [1, 1.4, 1],
+                                                opacity: [0.3, 0.9, 0.3],
+                                                y: [0, -3, 0]
+                                            }}
+                                            transition={{
+                                                duration: 1.4,
+                                                repeat: Infinity,
+                                                delay: i * 0.22,
+                                                ease: 'easeInOut'
+                                            }}
+                                            className="w-1.5 h-1.5 bg-sol-teal rounded-full"
+                                        />
+                                    ))}
+                                </span>
                             </div>
                         </motion.div>
                     )}
+
                 </AnimatePresence>
 
                 {/* Idle State Quote Display */}

@@ -10,9 +10,9 @@
   --color-sol-glass: hsla(222, 47%, 8%, 0.6);
   --color-sol-glass-border: hsla(0, 0%, 100%, 0.06);
 
-  --font-heading: var(--font-outfit), "Outfit", sans-serif;
-  --font-body: var(--font-inter), "Inter", sans-serif;
-  --font-serif: var(--font-playfair), "Playfair Display", serif;
+  --font-heading: var(--font-sora), "Sora", sans-serif;
+  --font-body: var(--font-jakarta), "Plus Jakarta Sans", sans-serif;
+  --font-serif: var(--font-newsreader), "Newsreader", serif;
 
   --animate-float: float 6s ease-in-out infinite;
   --animate-mesh: mesh 20s ease infinite;
