@@ -20,14 +20,14 @@ export default function CalmSidePanel() {
     }, []);
 
     return (
-        <motion.div 
+        <motion.div
             initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: 20 }}
             animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.3, ease: 'easeOut' }}
             className="w-full flex flex-col gap-6 relative z-10"
         >
             {/* 1. Daily Affirmation */}
-            <section className="bg-white/[0.04] backdrop-blur-3xl border border-white/10 rounded-[2rem] p-7 space-y-3 shadow-2xl shadow-black/20">
+            <section className="bg-white/[0.02] backdrop-blur-[8px] border border-white/[0.05] rounded-[2rem] p-7 space-y-3 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)] transition-all hover:bg-white/[0.04]">
                 <h3 className="text-xs font-heading font-semibold text-white tracking-widest uppercase opacity-80">
                     Daily Affirmation
                 </h3>
@@ -37,7 +37,7 @@ export default function CalmSidePanel() {
             </section>
 
             {/* 2. Breathing Reminder */}
-            <section className="bg-white/[0.04] backdrop-blur-3xl border border-white/10 rounded-[2rem] p-7 space-y-4 shadow-2xl shadow-black/20">
+            <section className="bg-white/[0.02] backdrop-blur-[8px] border border-white/[0.05] rounded-[2rem] p-7 space-y-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)] transition-all hover:bg-white/[0.04]">
                 <h3 className="text-xs font-heading font-semibold text-white tracking-widest uppercase opacity-80">
                     Calm Breathing
                 </h3>
@@ -49,7 +49,7 @@ export default function CalmSidePanel() {
             </section>
 
             {/* 3. Gentle Reminder */}
-            <section className="bg-white/[0.04] backdrop-blur-3xl border border-white/10 rounded-[2rem] p-7 space-y-3 shadow-2xl shadow-black/20">
+            <section className="bg-white/[0.02] backdrop-blur-[8px] border border-white/[0.05] rounded-[2rem] p-7 space-y-3 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)] transition-all hover:bg-white/[0.04]">
                 <h3 className="text-xs font-heading font-semibold text-white tracking-widest uppercase opacity-80">
                     Take Your Time
                 </h3>

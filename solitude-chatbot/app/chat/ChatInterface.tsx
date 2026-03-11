@@ -492,7 +492,7 @@ export default function ChatInterface() {
                             className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center pointer-events-none"
                             aria-live="polite"
                         >
-                            <div className="max-w-lg text-center px-8">
+                            <div className="max-w-lg text-center px-8 py-8 bg-sol-deep/80 backdrop-blur-xl rounded-[2rem] border border-white/10 shadow-2xl mx-4 pointer-events-auto">
                                 <motion.blockquote
                                     animate={shouldReduceMotion ? { opacity: 0.9 } : { opacity: [0.7, 1, 0.7] }}
                                     transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
