@@ -5,9 +5,41 @@ import { ConversationState } from '@/lib/ai/engine/types';
 import { detectIntensity } from '@/lib/ai/engine/state';
 import { StageTracker } from '@/lib/ai/engine/stage-tracker';
 import { constructPrompt } from '@/lib/promptConstructor';
+import { generateFallbackResponse } from '@/lib/fallbackResponder';
 
 // ─── In-Memory Session Store ──────────────────────────────────────────────────
 const sessionStore = new Map<string, ConversationState>();
+
+// ─── Ollama Availability Check ────────────────────────────────────────────────
+//
+// Pings the Ollama API root. If it responds, Ollama is available.
+// Cached for 30 seconds to avoid hammering on every request.
+//
+let ollamaAvailableCache: { available: boolean; checkedAt: number } | null = null;
+const OLLAMA_CHECK_TTL_MS = 30_000; // 30 seconds
+
+async function isOllamaAvailable(): Promise<boolean> {
+    const now = Date.now();
+    if (ollamaAvailableCache && now - ollamaAvailableCache.checkedAt < OLLAMA_CHECK_TTL_MS) {
+        return ollamaAvailableCache.available;
+    }
+
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
+        const res = await fetch('http://localhost:11434/api/tags', {
+            method: 'GET',
+            signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        const available = res.ok;
+        ollamaAvailableCache = { available, checkedAt: now };
+        return available;
+    } catch {
+        ollamaAvailableCache = { available: false, checkedAt: now };
+        return false;
+    }
+}
 
 // ─── POST /api/chat ───────────────────────────────────────────────────────────
 
@@ -76,34 +108,56 @@ export async function POST(req: Request) {
         });
 
 
-        // ── Step 3: Call Ollama ───────────────────────────────────────────────
+        // ── Step 3: Call Ollama OR use fallback ──────────────────────────────
         let generatedText: string;
-        try {
-            const ollamaRes = await fetch('http://localhost:11434/api/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: 'llama3',
-                    prompt: constructedPrompt,
-                    stream: false,
-                    options: {
-                        temperature: 0.7,
-                        top_p: 0.9,
-                    },
-                }),
-            });
 
-            if (!ollamaRes.ok) {
-                throw new Error(`Ollama returned status ${ollamaRes.status}`);
+        const ollamaReady = await isOllamaAvailable();
+
+        if (ollamaReady) {
+            // ── Ollama IS available — use the real LLM ──────────────────────
+            try {
+                const ollamaRes = await fetch('http://localhost:11434/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'llama3',
+                        prompt: constructedPrompt,
+                        stream: false,
+                        options: {
+                            temperature: 0.7,
+                            top_p: 0.9,
+                        },
+                    }),
+                });
+
+                if (!ollamaRes.ok) {
+                    throw new Error(`Ollama returned status ${ollamaRes.status}`);
+                }
+
+                const data = await ollamaRes.json();
+                generatedText = data.response ?? '';
+            } catch {
+                // Ollama was detected but failed mid-request — use fallback
+                console.warn('[Chat API] Ollama detected but generate failed — using fallback');
+                ollamaAvailableCache = null; // invalidate cache
+                generatedText = generateFallbackResponse({
+                    intent: engineResult.intent,
+                    stage,
+                    intensity,
+                    memory: currentState.memory,
+                    isCrisis: engineResult.isCrisis,
+                });
             }
-
-            const data = await ollamaRes.json();
-            generatedText = data.response ?? '';
-        } catch {
-            return NextResponse.json(
-                { content: 'Local language model is not running. Please start Ollama.', isCrisis: false },
-                { status: 200 }
-            );
+        } else {
+            // ── Ollama NOT available — use pre-authored fallback responses ───
+            console.info('[Chat API] Ollama not available — using fallback responder');
+            generatedText = generateFallbackResponse({
+                intent: engineResult.intent,
+                stage,
+                intensity,
+                memory: currentState.memory,
+                isCrisis: engineResult.isCrisis,
+            });
         }
 
         // ── Step 4: Output Guard ──────────────────────────────────────────────
