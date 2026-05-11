@@ -5,6 +5,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthProvider";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface MoodEntry {
+    date: string; // YYYY-MM-DD
+    label: string;
+    emoji: string;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const MOODS = [
     { label: "Good", emoji: "🙂", color: "hover:bg-sol-teal/20 hover:border-sol-teal/40 text-sol-teal" },
     { label: "Okay", emoji: "😐", color: "hover:bg-blue-500/20 hover:border-blue-500/40 text-blue-400" },
@@ -12,47 +22,66 @@ const MOODS = [
     { label: "Low", emoji: "😔", color: "hover:bg-slate-500/20 hover:border-slate-500/40 text-slate-400" },
 ];
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const todayStr = () => new Date().toISOString().split("T")[0];
+
+function getTodayMood(): { label: string; emoji: string } | null {
+    try {
+        const entries: MoodEntry[] = JSON.parse(localStorage.getItem("mood_entries") || "[]");
+        const today = todayStr();
+        const found = entries.find((e) => e.date === today);
+        return found ? { label: found.label, emoji: found.emoji } : null;
+    } catch {
+        return null;
+    }
+}
+
+function saveMoodEntry(label: string, emoji: string): void {
+    const today = todayStr();
+    const entries: MoodEntry[] = JSON.parse(localStorage.getItem("mood_entries") || "[]");
+
+    // Replace today's entry if it already exists, otherwise append
+    const idx = entries.findIndex((e) => e.date === today);
+    if (idx >= 0) {
+        entries[idx] = { date: today, label, emoji };
+    } else {
+        entries.push({ date: today, label, emoji });
+    }
+
+    localStorage.setItem("mood_entries", JSON.stringify(entries));
+    window.dispatchEvent(new Event("localStatsUpdated"));
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export function MoodCheckIn() {
     const { user } = useAuth();
     const [selectedMood, setSelectedMood] = useState<{ label: string; emoji: string } | null>(null);
     const [hasLoaded, setHasLoaded] = useState(false);
 
     useEffect(() => {
-        const today = new Date().toISOString().split("T")[0];
-        const saved = localStorage.getItem(`mood_${today}`);
-        if (saved) {
-            try {
-                setSelectedMood(JSON.parse(saved));
-            } catch (e) { }
-        }
+        setSelectedMood(getTodayMood());
         setHasLoaded(true);
     }, []);
 
     const handleSelectMood = async (mood: typeof MOODS[0]) => {
         setSelectedMood({ label: mood.label, emoji: mood.emoji });
-        const today = new Date().toISOString().split("T")[0];
-        localStorage.setItem(`mood_${today}`, JSON.stringify({ label: mood.label, emoji: mood.emoji }));
-
-        // Increment local stats
-        const stats = JSON.parse(localStorage.getItem('user_stats') || '{"moods":0,"reflections":0}');
-        stats.moods = (stats.moods || 0) + 1;
-        localStorage.setItem('user_stats', JSON.stringify(stats));
-        // Dispatch event so ActivityStats can update
-        window.dispatchEvent(new Event('localStatsUpdated'));
+        saveMoodEntry(mood.label, mood.emoji);
 
         if (user) {
             try {
                 // Optional Supabase storage (fails silently if table doesn't exist)
-                await supabase.from("moods").insert([
-                    { user_id: user.id, mood: mood.label, emoji: mood.emoji, date: today }
-                ]);
-            } catch (error) {
-                // Ignore backend errors as this is primarily UI personalization
+                await supabase.from("moods").upsert([
+                    { user_id: user.id, mood: mood.label, emoji: mood.emoji, date: todayStr() }
+                ], { onConflict: "user_id,date" });
+            } catch {
+                // Ignore backend errors — local storage is the source of truth
             }
         }
     };
 
-    if (!hasLoaded) return <div className="h-32 bg-white/[0.02] rounded-3xl animate-pulse"></div>;
+    if (!hasLoaded) return <div className="h-32 bg-white/[0.02] rounded-3xl animate-pulse" />;
 
     return (
         <div className="bg-neutral-800/40 border border-neutral-700/50 rounded-2xl p-5 backdrop-blur-sm">

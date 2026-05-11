@@ -5,40 +5,64 @@ import { Send, Edit3 } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthProvider";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ReflectionEntry {
+    date: string; // YYYY-MM-DD
+    content: string;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const todayStr = () => new Date().toISOString().split("T")[0];
+
+function getLastReflection(): string | null {
+    try {
+        const entries: ReflectionEntry[] = JSON.parse(
+            localStorage.getItem("reflection_entries") || "[]"
+        );
+        if (!entries.length) return null;
+        return entries[entries.length - 1].content;
+    } catch {
+        return null;
+    }
+}
+
+function saveReflectionEntry(content: string): void {
+    const entries: ReflectionEntry[] = JSON.parse(
+        localStorage.getItem("reflection_entries") || "[]"
+    );
+    entries.push({ date: todayStr(), content });
+    localStorage.setItem("reflection_entries", JSON.stringify(entries));
+    window.dispatchEvent(new Event("localStatsUpdated"));
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export function ReflectionBox() {
     const { user } = useAuth();
     const [reflection, setReflection] = useState("");
     const [lastReflection, setLastReflection] = useState<string | null>(null);
 
     useEffect(() => {
-        const saved = localStorage.getItem("last_reflection");
-        if (saved) {
-            setLastReflection(saved);
-        }
+        setLastReflection(getLastReflection());
     }, []);
 
     const handleSave = async () => {
         if (!reflection.trim()) return;
 
-        localStorage.setItem("last_reflection", reflection);
-        setLastReflection(reflection);
+        saveReflectionEntry(reflection.trim());
+        setLastReflection(reflection.trim());
         setReflection("");
-
-        // Increment local stats
-        const stats = JSON.parse(localStorage.getItem('user_stats') || '{"moods":0,"reflections":0}');
-        stats.reflections = (stats.reflections || 0) + 1;
-        localStorage.setItem('user_stats', JSON.stringify(stats));
-        // Dispatch event so ActivityStats can update
-        window.dispatchEvent(new Event('localStatsUpdated'));
 
         if (user) {
             try {
-                // Optional Supabase storage
+                // Optional Supabase storage (fails cleanly if table missing)
                 await supabase.from("reflections").insert([
-                    { user_id: user.id, content: reflection }
+                    { user_id: user.id, content: reflection.trim(), date: todayStr() }
                 ]);
-            } catch (error) {
-                // Fails cleanly if table missing
+            } catch {
+                // Local storage is the source of truth
             }
         }
     };

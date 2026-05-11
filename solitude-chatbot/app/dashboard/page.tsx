@@ -4,9 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-    Sparkles, MessageCircle, BookOpen, Heart, TrendingUp,
-    Calendar, Clock, LogOut, ArrowRight, Wind, Shield,
-    Flame, Star, BarChart2
+    Sparkles, MessageCircle, BookOpen, LogOut, ArrowRight, Wind, Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { AnimatedBackground } from "../components/AnimatedBackground";
@@ -15,6 +13,7 @@ import { MoodCheckIn } from "../components/dashboard/MoodCheckIn";
 import { ReflectionBox } from "../components/dashboard/ReflectionBox";
 import { ActivityStats } from "../components/dashboard/ActivityStats";
 import { DailyReminder } from "../components/dashboard/DailyReminder";
+import { PersonalReminder } from "../components/dashboard/PersonalReminder";
 
 
 // ─── Animation Variants ───────────────────────────────────────────────────────
@@ -218,9 +217,8 @@ export default function DashboardPage() {
                         </motion.div>
                     </div>
 
-                    {/* ── Two-column: Quick actions + Mood chart ── */}
+                    {/* ── Two-column: Quick actions + Personal Reminder ── */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-
 
                         {/* Quick actions */}
                         <motion.div variants={item} className="flex flex-col gap-3">
@@ -248,44 +246,11 @@ export default function DashboardPage() {
                             </motion.div>
                         </motion.div>
 
-                        {/* Mood chart */}
-                        <motion.div
-                            variants={item}
-                            className="flex flex-col gap-4 p-6 rounded-3xl bg-white/[0.04] border border-white/[0.07]"
-                        >
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Weekly mood</p>
-                                    <p className="text-white font-heading font-bold text-lg mt-0.5">This week</p>
-                                </div>
-                                <div className="w-9 h-9 rounded-2xl bg-white/[0.06] flex items-center justify-center text-slate-400">
-                                    <BarChart2 size={17} />
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
-                                <p className="text-slate-400 font-medium mb-1">No chart data</p>
-                                <p className="text-xs text-slate-500">Log your mood daily to start building your chart.</p>
-                            </div>
+                        {/* Personal Reminder */}
+                        <motion.div variants={item} className="flex flex-col justify-center">
+                            <PersonalReminder />
                         </motion.div>
                     </div>
-
-                    {/* ── Recent activity ── */}
-                    <motion.div variants={item}>
-                        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4">Recent sessions</p>
-                        <div className="flex flex-col items-center justify-center py-10 px-6 rounded-3xl bg-white/[0.02] border border-white/[0.05] border-dashed text-center">
-                            <div className="w-12 h-12 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-500 mb-4">
-                                <MessageCircle size={20} />
-                            </div>
-                            <p className="text-slate-300 font-medium mb-1">No recent sessions yet</p>
-                            <p className="text-sm text-slate-500 max-w-[250px] mb-6">Your conversation history will appear here once you start chatting with Solitude.</p>
-                            <Link href="/chat">
-                                <button className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10">
-                                    Start a Conversation
-                                </button>
-                            </Link>
-                        </div>
-                    </motion.div>
 
                     {/* ── Account section ── */}
                     <motion.div
